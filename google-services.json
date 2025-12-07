@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "885587443789",
+    "project_id": "bottle-project-334d8",
+    "storage_bucket": "bottle-project-334d8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:885587443789:android:634b6939cc0fb147e19c04",
+        "android_client_info": {
+          "package_name": "com.hyoso.bottle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC1Ob3ehtJxQ1hYyIKKt12NsbgVffCLRhM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
