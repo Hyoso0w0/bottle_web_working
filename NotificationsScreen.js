@@ -1727,10 +1727,13 @@ const NotificationsScreen = ({ navigation }) => {
             <Text style={styles.btnPrimaryText}>+ 추가</Text>
           </TouchableOpacity>
           {/* ✅ 여기 추가 */}
-  {Platform.OS === 'web' && (
+   {Platform.OS === 'web' && (
     <TouchableOpacity
-      style={[styles.btn, styles.btnOutline, { marginTop: 8 }]}
-      onPress={testWebNotification}
+      style={[styles.btn, styles.btnOutline, { marginBottom: 10 }]}
+      onPress={async () => {
+        alert('테스트 버튼 onPress까지는 들어옴');  // 1단계 체크
+        await testWebNotification();                // 2단계: 실제 알림
+      }}
     >
       <Text style={styles.btnOutlineText}>웹 알림 테스트</Text>
     </TouchableOpacity>
