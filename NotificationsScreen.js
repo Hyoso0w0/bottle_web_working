@@ -17,6 +17,139 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase";
 import { AppContext } from "./AppContext";
 
+// ---- 웹 알림 유틸 ----
+const getWebNotificationTimeouts = () => {
+  if (typeof window !== 'undefined' && !window.webNotificationTimeouts) {
+    window.webNotificationTimeouts = [];
+  }
+  return typeof window !== 'undefined' ? window.webNotificationTimeouts : [];
+};
+
+const clearWebNotifications = () => {
+  const timeouts = getWebNotificationTimeouts();
+  timeouts.forEach(timeout => clearTimeout(timeout));
+  if (typeof window !== 'undefined') {
+    window.webNotificationTimeouts = [];
+  }
+};
+
+const requestWebNotificationPermission = async () => {
+  if (Platform.OS !== 'web' || !('Notification' in window)) {
+    return false;
+  }
+  
+  if (Notification.permission === 'granted') {
+    return true;
+  }
+  
+  if (Notification.permission !== 'denied') {
+    const permission = await Notification.requestPermission();
+    return permission === 'granted';
+  }
+  
+  return false;
+};
+
+const showWebNotification = (title, body, data = {}) => {
+  if (Platform.OS !== 'web' || !('Notification' in window)) {
+    console.warn('웹 알림 표시 실패: Notification API를 사용할 수 없습니다');
+    return;
+  }
+  
+  if (Notification.permission !== 'granted') {
+    console.warn('웹 알림 표시 실패: 권한이 없습니다', Notification.permission);
+    return;
+  }
+  
+  try {
+    const notification = new Notification(title, {
+      body,
+      icon: '/favicon.png',
+      badge: '/favicon.png',
+      tag: data.alarmId || 'default',
+      requireInteraction: false,
+    });
+    
+    console.log('웹 알림 표시 성공:', { title, body, alarmId: data.alarmId });
+    
+    notification.onclick = () => {
+      window.focus();
+      notification.close();
+    };
+    
+    notification.onerror = (error) => {
+      console.error('웹 알림 에러:', error);
+    };
+    
+    // 5초 후 자동 닫기
+    setTimeout(() => {
+      notification.close();
+    }, 5000);
+  } catch (error) {
+    console.error('웹 알림 생성 실패:', error);
+  }
+};
+
+const scheduleWebNotification = (alarm, triggerDate) => {
+  if (Platform.OS !== 'web') return null;
+  
+  const now = new Date();
+  const delay = triggerDate.getTime() - now.getTime();
+  
+  if (delay <= 0) {
+    console.log('웹 알림 스케줄링 실패: 시간이 이미 지났습니다', {
+      alarmId: alarm.id,
+      triggerDate: triggerDate.toLocaleString(),
+      now: now.toLocaleString(),
+      delay,
+    });
+    return null;
+  }
+  
+  console.log('웹 알림 스케줄링:', {
+    alarmId: alarm.id,
+    message: alarm.message,
+    triggerDate: triggerDate.toLocaleString(),
+    delayMs: delay,
+    delayMinutes: Math.round(delay / 1000 / 60),
+  });
+  
+  const timeoutId = setTimeout(() => {
+    console.log('웹 알림 표시:', {
+      alarmId: alarm.id,
+      message: alarm.message,
+      permission: Notification.permission,
+    });
+    
+    showWebNotification(
+      '마이에코 🌱',
+      alarm.message || '알림 시간이에요!',
+      { alarmId: alarm.id }
+    );
+    
+    // 매일 반복인 경우 다음날 알림도 스케줄링
+    if (alarm.repeatDaily) {
+      const nextDay = new Date(triggerDate.getTime() + 24 * 60 * 60 * 1000);
+      const nextTimeoutId = scheduleWebNotification(alarm, nextDay);
+      if (nextTimeoutId && typeof window !== 'undefined') {
+        const timeouts = getWebNotificationTimeouts();
+        timeouts.push(nextTimeoutId);
+        if (typeof window !== 'undefined') {
+          window.webNotificationTimeouts = timeouts;
+        }
+      }
+    }
+  }, delay);
+  
+  const timeouts = getWebNotificationTimeouts();
+  timeouts.push(timeoutId);
+  if (typeof window !== 'undefined') {
+    window.webNotificationTimeouts = timeouts;
+  }
+  
+  return timeoutId;
+};
+
 // ---- 시간 계산 유틸 ----
 const getNextTriggerDate = (hour, minute, ampm) => {
   const h24 = ampm === 'PM' ? (hour % 12) + 12 : hour % 12;
@@ -43,6 +176,17 @@ const getNextTriggerDate = (hour, minute, ampm) => {
 const scheduleDailyAlarm = async (alarm) => {
   const nextTime = getNextTriggerDate(alarm.hour, alarm.minute, alarm.ampm);
 
+  // 웹에서는 브라우저 Notification API 사용
+  if (Platform.OS === 'web') {
+    const hasPermission = await requestWebNotificationPermission();
+    if (!hasPermission) {
+      console.warn('웹 알림 권한이 없어 알림을 스케줄링할 수 없습니다:', alarm.id);
+      return null;
+    }
+    const timeoutId = scheduleWebNotification(alarm, nextTime);
+    return timeoutId;
+  }
+
   const notificationId = await Notifications.scheduleNotificationAsync({
     content: {
       title: '마이에코 🌱',
@@ -64,6 +208,17 @@ const scheduleOneTimeAlarm = async (alarm) => {
   const now = new Date();
 
   if (date <= now) return null;
+
+  // 웹에서는 브라우저 Notification API 사용
+  if (Platform.OS === 'web') {
+    const hasPermission = await requestWebNotificationPermission();
+    if (!hasPermission) {
+      console.warn('웹 알림 권한이 없어 알림을 스케줄링할 수 없습니다:', alarm.id);
+      return null;
+    }
+    const timeoutId = scheduleWebNotification(alarm, date);
+    return timeoutId;
+  }
 
   const notificationId = await Notifications.scheduleNotificationAsync({
     content: {
@@ -99,21 +254,33 @@ const scheduleWeeklyAlarm = async (alarm) => {
     if (deltaDays === 0 && next <= now) next.setDate(next.getDate() + 7);
     else next.setDate(next.getDate() + deltaDays);
 
-    const id = await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '마이에코 🌱',
-        body: alarm.message,
-        data: { alarmId: alarm.id },
-      },
-      trigger: {
-        type: 'weekly',
-        weekday: dayOfWeek + 1, // 1=Sun, 2=Mon, ... 7=Sat
-        hour: alarm.ampm === 'PM' ? (alarm.hour % 12) + 12 : alarm.hour % 12,
-        minute: alarm.minute,
-      },
-    });
-
-    notificationIds.push(id);
+    // 웹에서는 브라우저 Notification API 사용
+    if (Platform.OS === 'web') {
+      const hasPermission = await requestWebNotificationPermission();
+      if (!hasPermission) {
+        console.warn('웹 알림 권한이 없어 알림을 스케줄링할 수 없습니다:', alarm.id);
+        continue;
+      }
+      const timeoutId = scheduleWebNotification(alarm, next);
+      if (timeoutId) {
+        notificationIds.push(timeoutId);
+      }
+    } else {
+      const id = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '마이에코 🌱',
+          body: alarm.message,
+          data: { alarmId: alarm.id },
+        },
+        trigger: {
+          type: 'weekly',
+          weekday: dayOfWeek + 1, // 1=Sun, 2=Mon, ... 7=Sat
+          hour: alarm.ampm === 'PM' ? (alarm.hour % 12) + 12 : alarm.hour % 12,
+          minute: alarm.minute,
+        },
+      });
+      notificationIds.push(id);
+    }
   }
 
   return notificationIds;
@@ -227,18 +394,54 @@ const NotificationsScreen = ({ navigation }) => {
   const pad2 = (n) => String(n).padStart(2, '0');
 
   const applyAllSchedulesSafely = async (alarmsList) => {
-    await Notifications.cancelAllScheduledNotificationsAsync();
-
-    for (const alarm of alarmsList) {
-      if (!alarm.enabled) continue;
-
-      if (alarm.repeatDaily) {
-        await scheduleDailyAlarm(alarm);
-      } else if (alarm.repeatDays?.length) {
-        await scheduleWeeklyAlarm(alarm);
-      } else {
-        await scheduleOneTimeAlarm(alarm);
+    // 웹에서는 브라우저 Notification API 사용
+    if (Platform.OS === 'web') {
+      console.log('웹 알림 스케줄링 시작, 알림 개수:', alarmsList.length);
+      clearWebNotifications();
+      const hasPermission = await requestWebNotificationPermission();
+      console.log('웹 알림 권한:', hasPermission ? 'granted' : 'denied');
+      
+      if (!hasPermission) {
+        console.warn('웹 알림 권한이 없어 알림을 표시할 수 없습니다.');
+        return;
       }
+    } else {
+      await Notifications.cancelAllScheduledNotificationsAsync();
+    }
+
+    let scheduledCount = 0;
+    for (const alarm of alarmsList) {
+      if (!alarm.enabled) {
+        console.log('알림 스킵 (비활성화):', alarm.id);
+        continue;
+      }
+
+      try {
+        if (alarm.repeatDaily) {
+          const id = await scheduleDailyAlarm(alarm);
+          if (id) scheduledCount++;
+          console.log('매일 반복 알림 스케줄링:', alarm.id, id ? '성공' : '실패');
+        } else if (alarm.repeatDays?.length) {
+          const ids = await scheduleWeeklyAlarm(alarm);
+          scheduledCount += ids.length;
+          console.log('주간 반복 알림 스케줄링:', alarm.id, ids.length, '개');
+        } else {
+          const id = await scheduleOneTimeAlarm(alarm);
+          if (id) scheduledCount++;
+          console.log('한 번 알림 스케줄링:', alarm.id, id ? '성공' : '실패');
+        }
+      } catch (error) {
+        console.error('알림 스케줄링 에러:', alarm.id, error);
+      }
+    }
+    
+    if (Platform.OS === 'web') {
+      const timeouts = getWebNotificationTimeouts();
+      console.log('웹 알림 스케줄링 완료:', {
+        총알림개수: alarmsList.length,
+        스케줄된개수: scheduledCount,
+        timeout개수: timeouts.length,
+      });
     }
   };
 
@@ -343,6 +546,315 @@ const NotificationsScreen = ({ navigation }) => {
   const minuteRef = useRef(null);
   const [hourLoopIndex, setHourLoopIndex] = useState(0);
   const [minuteLoopIndex, setMinuteLoopIndex] = useState(0);
+
+  // 웹에서 마우스 휠 및 드래그 스크롤 활성화
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    let wheelTimeout = null;
+    let isDragging = { hour: false, minute: false };
+    let dragStartY = { hour: 0, minute: 0 };
+    let dragStartScrollTop = { hour: 0, minute: 0 };
+
+    const findDomNode = (ref) => {
+      if (!ref.current) return null;
+      
+      const scrollView = ref.current;
+      
+      // 여러 방법으로 DOM 노드 찾기 시도
+      let domNode = null;
+      
+      // 방법 1: _component._nativeNode
+      if (scrollView._component?._nativeNode) {
+        domNode = scrollView._component._nativeNode;
+      }
+      // 방법 2: _component
+      else if (scrollView._component) {
+        domNode = scrollView._component;
+      }
+      // 방법 3: _nativeNode
+      else if (scrollView._nativeNode) {
+        domNode = scrollView._nativeNode;
+      }
+      // 방법 4: getNode()
+      else if (scrollView.getNode) {
+        domNode = scrollView.getNode();
+      }
+      
+      // 실제 스크롤 가능한 요소 찾기 (div 또는 스크롤 컨테이너)
+      if (domNode) {
+        // scrollTop 속성이 있는지 확인
+        if (typeof domNode.scrollTop !== 'undefined') {
+          return domNode;
+        }
+        
+        // 자식 요소 중 스크롤 가능한 요소 찾기
+        if (domNode.querySelector) {
+          const scrollable = domNode.querySelector('[data-scrollable]') || 
+                            domNode.querySelector('div[style*="overflow"]') ||
+                            domNode.firstElementChild;
+          if (scrollable && typeof scrollable.scrollTop !== 'undefined') {
+            return scrollable;
+          }
+        }
+        
+        // 직접 자식 요소 확인
+        if (domNode.children && domNode.children.length > 0) {
+          for (let i = 0; i < domNode.children.length; i++) {
+            const child = domNode.children[i];
+            if (typeof child.scrollTop !== 'undefined') {
+              return child;
+            }
+          }
+        }
+      }
+      
+      return domNode;
+    };
+
+    const setupScrollHandler = (ref, isHour) => {
+      if (!ref.current) return null;
+
+      const key = isHour ? 'hour' : 'minute';
+
+      // 마우스 휠 핸들러
+      const handleWheel = (e) => {
+        const domNode = findDomNode(ref);
+        if (!domNode || typeof domNode.scrollTop === 'undefined') return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const currentScrollTop = domNode.scrollTop || 0;
+        const deltaY = e.deltaY * 0.5; // 스크롤 속도 조절
+        const maxScroll = domNode.scrollHeight - domNode.clientHeight;
+        const newScrollTop = Math.max(0, Math.min(
+          currentScrollTop + deltaY,
+          maxScroll
+        ));
+        
+        domNode.scrollTop = newScrollTop;
+        
+        // 스크롤이 끝난 후 스냅 처리
+        clearTimeout(wheelTimeout);
+        wheelTimeout = setTimeout(() => {
+          const scrollEvent = {
+            nativeEvent: {
+              contentOffset: {
+                y: domNode.scrollTop,
+                x: 0,
+              },
+            },
+          };
+          
+          if (isHour) {
+            onHourScrollEnd(scrollEvent);
+          } else {
+            onMinuteScrollEnd(scrollEvent);
+          }
+        }, 200);
+      };
+
+      // 마우스 드래그 핸들러
+      const handleMouseDown = (e) => {
+        const domNode = findDomNode(ref);
+        if (!domNode || typeof domNode.scrollTop === 'undefined') {
+          console.log('DOM 노드를 찾을 수 없거나 스크롤 불가능:', isHour ? 'hour' : 'minute', domNode);
+          return;
+        }
+
+        isDragging[key] = true;
+        dragStartY[key] = e.clientY;
+        dragStartScrollTop[key] = domNode.scrollTop || 0;
+        
+        if (domNode.style) {
+          domNode.style.cursor = 'grabbing';
+          domNode.style.userSelect = 'none';
+        }
+        
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
+      const handleMouseMove = (e) => {
+        if (!isDragging[key]) return;
+
+        const domNode = findDomNode(ref);
+        if (!domNode || typeof domNode.scrollTop === 'undefined') {
+          isDragging[key] = false;
+          return;
+        }
+
+        const deltaY = dragStartY[key] - e.clientY;
+        const newScrollTop = dragStartScrollTop[key] + deltaY;
+        const maxScroll = domNode.scrollHeight - domNode.clientHeight;
+        
+        domNode.scrollTop = Math.max(0, Math.min(newScrollTop, maxScroll));
+        
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
+      const handleMouseUp = (e) => {
+        if (!isDragging[key]) return;
+
+        const domNode = findDomNode(ref);
+        if (domNode) {
+          domNode.style.cursor = 'grab';
+          domNode.style.userSelect = '';
+        }
+
+        isDragging[key] = false;
+        
+        // 스크롤이 끝난 후 스냅 처리
+        clearTimeout(wheelTimeout);
+        wheelTimeout = setTimeout(() => {
+          if (domNode) {
+            const scrollEvent = {
+              nativeEvent: {
+                contentOffset: {
+                  y: domNode.scrollTop,
+                  x: 0,
+                },
+              },
+            };
+            
+            if (isHour) {
+              onHourScrollEnd(scrollEvent);
+            } else {
+              onMinuteScrollEnd(scrollEvent);
+            }
+          }
+        }, 150);
+        
+        e.preventDefault();
+      };
+
+      const handleMouseLeave = (e) => {
+        if (isDragging[key]) {
+          const domNode = findDomNode(ref);
+          if (domNode) {
+            domNode.style.cursor = 'grab';
+            domNode.style.userSelect = '';
+          }
+          isDragging[key] = false;
+        }
+      };
+
+      // 전역 마우스 이벤트 (드래그가 휠 밖으로 나갔을 때)
+      const handleGlobalMouseMove = (e) => {
+        if (isDragging[key]) {
+          handleMouseMove(e);
+        }
+      };
+
+      const handleGlobalMouseUp = (e) => {
+        if (isDragging[key]) {
+          handleMouseUp(e);
+        }
+      };
+
+      // 약간의 지연 후 DOM 노드 찾기 (렌더링 완료 후)
+      let timeoutId = null;
+      let retryCount = 0;
+      const maxRetries = 15;
+      
+      const trySetup = () => {
+        const domNode = findDomNode(ref);
+        
+        // 더 깊이 탐색 - React Native Web의 ScrollView 구조
+        let scrollableNode = domNode;
+        if (domNode) {
+          // ScrollView의 실제 스크롤 컨테이너 찾기
+          if (domNode.querySelector) {
+            // overflow-y: auto 또는 scroll이 있는 요소 찾기
+            const allDivs = domNode.querySelectorAll('div');
+            for (let div of allDivs) {
+              const style = window.getComputedStyle(div);
+              if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && 
+                  typeof div.scrollTop !== 'undefined') {
+                scrollableNode = div;
+                break;
+              }
+            }
+          }
+          
+          // 여전히 scrollTop이 없으면 첫 번째 자식 요소 시도
+          if (typeof scrollableNode.scrollTop === 'undefined' && scrollableNode.firstElementChild) {
+            scrollableNode = scrollableNode.firstElementChild;
+          }
+        }
+        
+        if (scrollableNode && typeof scrollableNode.addEventListener === 'function' && typeof scrollableNode.scrollTop !== 'undefined') {
+          scrollableNode.addEventListener('wheel', handleWheel, { passive: false });
+          scrollableNode.addEventListener('mousedown', handleMouseDown, { passive: false });
+          scrollableNode.addEventListener('mouseleave', handleMouseLeave, { passive: false });
+          if (scrollableNode.style) {
+            scrollableNode.style.cursor = 'grab';
+            scrollableNode.style.userSelect = 'none';
+          }
+          
+          // 전역 이벤트 (드래그가 요소 밖으로 나갔을 때)
+          document.addEventListener('mousemove', handleGlobalMouseMove);
+          document.addEventListener('mouseup', handleGlobalMouseUp);
+          
+          console.log('드래그 핸들러 설정 완료:', isHour ? 'hour' : 'minute', scrollableNode);
+          return true;
+        } else if (retryCount < maxRetries) {
+          retryCount++;
+          timeoutId = setTimeout(trySetup, 200);
+          return false;
+        } else {
+          console.warn('DOM 노드를 찾을 수 없습니다:', isHour ? 'hour' : 'minute', {
+            domNode,
+            scrollableNode,
+            hasAddEventListener: domNode && typeof domNode.addEventListener === 'function',
+            hasScrollTop: domNode && typeof domNode.scrollTop !== 'undefined',
+          });
+          return false;
+        }
+      };
+      
+      timeoutId = setTimeout(trySetup, 300);
+
+      return () => {
+        clearTimeout(timeoutId);
+        clearTimeout(wheelTimeout);
+        const domNode = findDomNode(ref);
+        let scrollableNode = domNode;
+        
+        // cleanup 시에도 같은 방식으로 노드 찾기
+        if (domNode && domNode.querySelector) {
+          const allDivs = domNode.querySelectorAll('div');
+          for (let div of allDivs) {
+            const style = window.getComputedStyle(div);
+            if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && 
+                typeof div.scrollTop !== 'undefined') {
+              scrollableNode = div;
+              break;
+            }
+          }
+        }
+        
+        if (scrollableNode && typeof scrollableNode.removeEventListener === 'function') {
+          scrollableNode.removeEventListener('wheel', handleWheel);
+          scrollableNode.removeEventListener('mousedown', handleMouseDown);
+          scrollableNode.removeEventListener('mouseleave', handleMouseLeave);
+        }
+        document.removeEventListener('mousemove', handleGlobalMouseMove);
+        document.removeEventListener('mouseup', handleGlobalMouseUp);
+      };
+    };
+
+    const cleanupHour = setupScrollHandler(hourRef, true);
+    const cleanupMinute = setupScrollHandler(minuteRef, false);
+
+    return () => {
+      if (cleanupHour) cleanupHour();
+      if (cleanupMinute) cleanupMinute();
+      clearTimeout(wheelTimeout);
+    };
+  }, []);
 
   // 수정 모드일 때 값 초기화
   useEffect(() => {
@@ -483,6 +995,11 @@ const NotificationsScreen = ({ navigation }) => {
     setAlarms(updated);
     await saveAlarmsToStorage(updated);
 
+    // 웹에서는 알림 스케줄링 건너뛰기
+    if (Platform.OS === 'web') {
+      return;
+    }
+    
     await Notifications.cancelAllScheduledNotificationsAsync();
 
     for (const alarm of updated) {
@@ -589,6 +1106,11 @@ const NotificationsScreen = ({ navigation }) => {
     await saveAlarmsToStorage(newAlarms);
 
     try {
+      // 웹에서는 알림 스케줄링 건너뛰기
+      if (Platform.OS === 'web') {
+        return;
+      }
+      
       await Notifications.cancelAllScheduledNotificationsAsync();
       await applyAllSchedulesSafely(newAlarms);
     } catch (e) {
@@ -598,7 +1120,21 @@ const NotificationsScreen = ({ navigation }) => {
 
   const clearAllSchedules = async () => {
     try {
-      await Notifications.cancelAllScheduledNotificationsAsync();
+      // 웹에서는 브라우저 알림 클리어
+      if (Platform.OS === 'web') {
+        clearWebNotifications();
+      } else if (Notifications) {
+        await Notifications.cancelAllScheduledNotificationsAsync();
+      }
+      
+      setAlarms([]);
+      if (isAsyncStorageAvailable()) {
+        await AsyncStorage.setItem("@bottle_alarms", JSON.stringify([]));
+      }
+      
+      if (Platform.OS === 'web') {
+        return;
+      }
       setAlarms([]);
       if (isAsyncStorageAvailable()) {
         await AsyncStorage.removeItem(STORAGE_KEY);
@@ -665,7 +1201,7 @@ const NotificationsScreen = ({ navigation }) => {
       <View style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={styles.screenContainer}
-          nestedScrollEnabled
+          nestedScrollEnabled={Platform.OS !== 'web'}
           keyboardShouldPersistTaps="always"
           scrollEnabled={outerScrollEnabled}
           keyboardDismissMode="on-drag"
@@ -811,28 +1347,73 @@ const NotificationsScreen = ({ navigation }) => {
               <View style={styles.wheel}>
                 <ScrollView
                   ref={hourRef}
-                  nestedScrollEnabled
+                  nestedScrollEnabled={Platform.OS !== 'web'}
                   showsVerticalScrollIndicator={false}
                   onScrollBeginDrag={() =>
                     setOuterScrollEnabled(false)
                   }
-                  onScrollEndDrag={() => setOuterScrollEnabled(true)}
+                  onScrollEndDrag={(e) => {
+                    setOuterScrollEnabled(true);
+                    // 웹에서는 onMomentumScrollEnd가 작동하지 않을 수 있으므로 여기서 처리
+                    if (Platform.OS === 'web') {
+                      onHourScrollEnd(e);
+                    }
+                  }}
                   onMomentumScrollEnd={(e) => {
                     setOuterScrollEnabled(true);
                     onHourScrollEnd(e);
                   }}
-                  snapToInterval={H_ITEM_H}
+                  onScroll={(e) => {
+                    // 웹에서도 스크롤 이벤트 처리
+                    if (Platform.OS === 'web') {
+                      const offsetY = e.nativeEvent.contentOffset.y;
+                      const index = Math.round(offsetY / H_ITEM_H);
+                      if (index >= 0 && index < hoursLoop.length) {
+                        setHourLoopIndex(index);
+                      }
+                    }
+                  }}
+                  snapToInterval={Platform.OS !== 'web' ? H_ITEM_H : undefined}
                   decelerationRate="fast"
                   scrollEventThrottle={16}
+                  style={Platform.OS === 'web' ? { 
+                    overflowY: 'auto', 
+                    WebkitOverflowScrolling: 'touch',
+                    cursor: 'grab',
+                  } : {}}
                 >
                   <View style={{ height: 2 * H_ITEM_H }} />
                   {hoursLoop.map((h, i) => (
-                    <View
+                    <TouchableOpacity
                       key={`h-${i}`}
+                      activeOpacity={0.7}
                       style={[
                         styles.wheelItem,
                         { height: H_ITEM_H },
                       ]}
+                      onPress={() => {
+                        // 클릭한 시간으로 스크롤
+                        if (hourRef.current) {
+                          hourRef.current.scrollTo({
+                            y: i * H_ITEM_H,
+                            animated: true,
+                          });
+                          setHourLoopIndex(i);
+                          
+                          // 스크롤 완료 후 값 업데이트
+                          setTimeout(() => {
+                            const scrollEvent = {
+                              nativeEvent: {
+                                contentOffset: {
+                                  y: i * H_ITEM_H,
+                                  x: 0,
+                                },
+                              },
+                            };
+                            onHourScrollEnd(scrollEvent);
+                          }, 300);
+                        }
+                      }}
                     >
                       <Text
                         style={
@@ -843,7 +1424,7 @@ const NotificationsScreen = ({ navigation }) => {
                       >
                         {pad2(h)}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                   <View style={{ height: 2 * H_ITEM_H }} />
                 </ScrollView>
@@ -855,28 +1436,142 @@ const NotificationsScreen = ({ navigation }) => {
               <View style={styles.wheel}>
                 <ScrollView
                   ref={minuteRef}
-                  nestedScrollEnabled
+                  nestedScrollEnabled={Platform.OS !== 'web'}
                   showsVerticalScrollIndicator={false}
                   onScrollBeginDrag={() =>
                     setOuterScrollEnabled(false)
                   }
-                  onScrollEndDrag={() => setOuterScrollEnabled(true)}
+                  onScrollEndDrag={(e) => {
+                    setOuterScrollEnabled(true);
+                    // 웹에서는 onMomentumScrollEnd가 작동하지 않을 수 있으므로 여기서 처리
+                    if (Platform.OS === 'web') {
+                      onMinuteScrollEnd(e);
+                    }
+                  }}
                   onMomentumScrollEnd={(e) => {
                     setOuterScrollEnabled(true);
                     onMinuteScrollEnd(e);
                   }}
-                  snapToInterval={M_ITEM_H}
+                  onScroll={(e) => {
+                    // 웹에서도 스크롤 이벤트 처리
+                    if (Platform.OS === 'web') {
+                      const offsetY = e.nativeEvent.contentOffset.y;
+                      const index = Math.round(offsetY / M_ITEM_H);
+                      if (index >= 0 && index < minutesLoop.length) {
+                        setMinuteLoopIndex(index);
+                      }
+                    }
+                  }}
+                  snapToInterval={Platform.OS !== 'web' ? M_ITEM_H : undefined}
                   decelerationRate="fast"
                   scrollEventThrottle={16}
+                  style={Platform.OS === 'web' ? { 
+                    overflowY: 'auto', 
+                    WebkitOverflowScrolling: 'touch',
+                    cursor: 'grab',
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                  } : {}}
+                  {...(Platform.OS === 'web' && {
+                    // 웹에서 직접 마우스 이벤트 처리
+                    onMouseDown: (e) => {
+                      e.preventDefault();
+                      const scrollView = minuteRef.current;
+                      if (!scrollView) return;
+                      
+                      // DOM 노드 찾기
+                      let domNode = scrollView._component?._nativeNode || 
+                                   scrollView._component ||
+                                   scrollView._nativeNode;
+                      
+                      if (!domNode) return;
+                      
+                      // 스크롤 가능한 요소 찾기
+                      if (domNode.querySelector) {
+                        const allDivs = domNode.querySelectorAll('div');
+                        for (let div of allDivs) {
+                          const style = window.getComputedStyle(div);
+                          if ((style.overflowY === 'auto' || style.overflowY === 'scroll')) {
+                            domNode = div;
+                            break;
+                          }
+                        }
+                      }
+                      
+                      if (typeof domNode.scrollTop === 'undefined') return;
+                      
+                      const startY = e.clientY;
+                      const startScroll = domNode.scrollTop || 0;
+                      if (domNode.style) {
+                        domNode.style.cursor = 'grabbing';
+                        domNode.style.userSelect = 'none';
+                      }
+                      
+                      const handleMove = (moveE) => {
+                        const deltaY = startY - moveE.clientY;
+                        const newScroll = startScroll + deltaY;
+                        const maxScroll = domNode.scrollHeight - domNode.clientHeight;
+                        domNode.scrollTop = Math.max(0, Math.min(newScroll, maxScroll));
+                      };
+                      
+                      const handleUp = () => {
+                        if (domNode.style) {
+                          domNode.style.cursor = 'grab';
+                          domNode.style.userSelect = '';
+                        }
+                        document.removeEventListener('mousemove', handleMove);
+                        document.removeEventListener('mouseup', handleUp);
+                        
+                        setTimeout(() => {
+                          const scrollEvent = {
+                            nativeEvent: {
+                              contentOffset: {
+                                y: domNode.scrollTop,
+                                x: 0,
+                              },
+                            },
+                          };
+                          onMinuteScrollEnd(scrollEvent);
+                        }, 100);
+                      };
+                      
+                      document.addEventListener('mousemove', handleMove);
+                      document.addEventListener('mouseup', handleUp);
+                    },
+                  })}
                 >
                   <View style={{ height: 2 * M_ITEM_H }} />
                   {minutesLoop.map((m, i) => (
-                    <View
+                    <TouchableOpacity
                       key={`m-${i}`}
+                      activeOpacity={0.7}
                       style={[
                         styles.wheelItem,
                         { height: M_ITEM_H },
                       ]}
+                      onPress={() => {
+                        // 클릭한 분으로 스크롤
+                        if (minuteRef.current) {
+                          minuteRef.current.scrollTo({
+                            y: i * M_ITEM_H,
+                            animated: true,
+                          });
+                          setMinuteLoopIndex(i);
+                          
+                          // 스크롤 완료 후 값 업데이트
+                          setTimeout(() => {
+                            const scrollEvent = {
+                              nativeEvent: {
+                                contentOffset: {
+                                  y: i * M_ITEM_H,
+                                  x: 0,
+                                },
+                              },
+                            };
+                            onMinuteScrollEnd(scrollEvent);
+                          }, 300);
+                        }
+                      }}
                     >
                       <Text
                         style={
@@ -887,7 +1582,7 @@ const NotificationsScreen = ({ navigation }) => {
                       >
                         {pad2(m)}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                   <View style={{ height: 2 * M_ITEM_H }} />
                 </ScrollView>
@@ -1322,10 +2017,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#fff',
+    ...(Platform.OS === 'web' && {
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      cursor: 'grab',
+      position: 'relative',
+    }),
   },
   wheelItem: {
     alignItems: 'center',
     justifyContent: 'center',
+    ...(Platform.OS === 'web' && {
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+      pointerEvents: 'auto',
+    }),
   },
   wheelText: {
     fontSize: 18,

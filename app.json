@@ -41,7 +41,19 @@
       "expo-web-browser"
     ],
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "static",
+      "name": "bottle",
+      "shortName": "bottle",
+      "lang": "ko",
+      "scope": "/",
+      "themeColor": "#ffffff",
+      "backgroundColor": "#ffffff",
+      "display": "standalone",
+      "orientation": "portrait",
+      "startUrl": "/",
+      "description": "마이에코 - 나만의 습관 관리 앱"
     },
     "extra": {
       "eas": {

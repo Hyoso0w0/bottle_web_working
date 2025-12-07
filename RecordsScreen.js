@@ -10,15 +10,58 @@ import {
 import { Feather, MaterialIcons } from "@expo/vector-icons";
 import { AppContext } from "./AppContext";
 import LevelSection from "./LevelSection";
-import { levelStages } from "./data/levels"
 import { signOut } from "firebase/auth";
 import { auth } from "./firebase";
+
+// levelStages import 안전하게 처리 - 웹 호환성 고려
+import { levelStages as levelStagesImport } from "./data/levels";
+
+let levelStages = {
+  water: [],
+  waste: [],
+  carbon: []
+};
+
+try {
+  // ES6 import가 제대로 작동하는지 확인
+  if (levelStagesImport && typeof levelStagesImport === 'object') {
+    levelStages = {
+      water: Array.isArray(levelStagesImport.water) ? levelStagesImport.water : [],
+      waste: Array.isArray(levelStagesImport.waste) ? levelStagesImport.waste : [],
+      carbon: Array.isArray(levelStagesImport.carbon) ? levelStagesImport.carbon : []
+    };
+  } else {
+    // require 방식도 시도 (fallback)
+    try {
+      const levelsModule = require("./data/levels");
+      const loadedStages = levelsModule.levelStages || levelsModule.default || null;
+      if (loadedStages && typeof loadedStages === 'object') {
+        levelStages = {
+          water: Array.isArray(loadedStages.water) ? loadedStages.water : [],
+          waste: Array.isArray(loadedStages.waste) ? loadedStages.waste : [],
+          carbon: Array.isArray(loadedStages.carbon) ? loadedStages.carbon : []
+        };
+      }
+    } catch (reqErr) {
+      console.error('levelStages require 실패:', reqErr);
+    }
+  }
+} catch (e) {
+  console.error('levelStages를 로드할 수 없습니다:', e);
+}
 
 
 
 const RecordsScreen = ({ navigation }) => {
   const { completedMissions, stats, cookieStats } = useContext(AppContext);
   const [showCompleted, setShowCompleted] = useState(false);
+  
+  // stats가 undefined일 경우를 대비한 기본값 설정
+  const safeStats = stats || {
+    totalWater: 0,
+    totalWaste: 0,
+    totalCO2: 0,
+  };
   const handleLogout = async () => {
     try {
       await signOut(auth);          // ✅ Firebase에서 로그아웃
@@ -184,12 +227,12 @@ const RecordsScreen = ({ navigation }) => {
               >
                 <Text style={styles.statistics_icon}>💧</Text>
               </View>
-            <Text style={styles.statistics_value}> 물 {stats.totalWater} mL 절약</Text>
+            <Text style={styles.statistics_value}> 물 {safeStats.totalWater} mL 절약</Text>
               <LevelSection
                 label="물 절약 미션"
                 emoji="💧"
                 unit="mL"
-                value={stats.totalWater}
+                value={safeStats.totalWater}
                 stages={levelStages.water}
               />
           </View>
@@ -199,12 +242,12 @@ const RecordsScreen = ({ navigation }) => {
               >
                 <Text style={styles.statistics_icon}>🗑️</Text>
               </View>
-          < Text style={styles.statistics_value}>쓰레기 {stats.totalWaste}kg 절약</Text>
+          < Text style={styles.statistics_value}>쓰레기 {safeStats.totalWaste}kg 절약</Text>
             <LevelSection
               label="쓰레기 절감 미션"
               emoji="🗑️"
               unit="kg"
-              value={stats.totalWaste}
+              value={safeStats.totalWaste}
               stages={levelStages.waste}
             />
           </View>
@@ -214,12 +257,12 @@ const RecordsScreen = ({ navigation }) => {
               >
                 <Text style={styles.statistics_icon}>🌳</Text>
               </View>
-            <Text style={styles.statistics_value}>CO₂ {stats.totalCO2} g 절약</Text>
+            <Text style={styles.statistics_value}>CO₂ {safeStats.totalCO2} g 절약</Text>
                <LevelSection
                 label="탄소 절감 미션"
                 emoji="🌳"
                 unit="g"
-                value={stats.totalCO2}
+                value={safeStats.totalCO2}
                 stages={levelStages.carbon}
               />
           </View>

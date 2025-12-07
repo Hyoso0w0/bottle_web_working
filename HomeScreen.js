@@ -3,10 +3,46 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useMemo, useState, useContext, useEffect, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import TreeForest from './TreeForest';
-import * as Notifications from 'expo-notifications';
-import { LOCAL_NOTIFICATION_CHANNEL_ID } from './localNotifications';
 import { AppContext } from "./AppContext";
-import { missions } from "./data/missions";
+
+// 웹에서는 알림 모듈을 조건부로 import
+let Notifications = null;
+let LOCAL_NOTIFICATION_CHANNEL_ID = null;
+if (Platform.OS !== 'web') {
+  try {
+    Notifications = require('expo-notifications');
+    LOCAL_NOTIFICATION_CHANNEL_ID = require('./localNotifications').LOCAL_NOTIFICATION_CHANNEL_ID;
+  } catch (e) {
+    console.warn('expo-notifications를 로드할 수 없습니다:', e);
+  }
+}
+
+// missions import 안전하게 처리 - 웹 호환성 고려
+import { missions as missionsImport } from "./data/missions";
+
+let missions = [];
+try {
+  // ES6 import가 제대로 작동하는지 확인
+  if (Array.isArray(missionsImport) && missionsImport.length > 0) {
+    missions = missionsImport;
+  } else {
+    // require 방식도 시도 (fallback)
+    try {
+      const missionsModule = require("./data/missions");
+      const loaded = missionsModule.missions || missionsModule.default || [];
+      if (Array.isArray(loaded) && loaded.length > 0) {
+        missions = loaded;
+      }
+    } catch (reqErr) {
+      console.error('missions require 실패:', reqErr);
+    }
+  }
+  
+  // 경고 메시지 제거 - useEffect에서 동적 로드 처리
+} catch (e) {
+  console.error('missions를 로드할 수 없습니다:', e);
+  missions = [];
+}
 import { Alert } from "react-native" 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Feather, MaterialIcons } from "@expo/vector-icons";
@@ -71,6 +107,8 @@ const HomeScreen = ({ navigation }) => {
   // 🎯 오늘의 미션 3개 상태
   const [dailyMissions, setDailyMissions] = useState([]);
   const [completedDailyIds, setCompletedDailyIds] = useState([]);
+  const [missionsLoaded, setMissionsLoaded] = useState(Array.isArray(missions) && missions.length > 0);
+  const [availableMissions, setAvailableMissions] = useState(Array.isArray(missions) && missions.length > 0 ? missions : []);
 
    const saveAlarmsToStorage = async (list) => {
     try {
@@ -469,15 +507,71 @@ const todayAlarms = useMemo(() => {
   };
 
 
-// 앱 실행 시 오늘의 미션 3개 추출
+// missions 로드 확인 및 동적 로드
 useEffect(() => {
-  const shuffled = [...missions].sort(() => Math.random() - 0.5);
-  setDailyMissions(shuffled.slice(0, 3));
+  const checkAndLoadMissions = async () => {
+    // missions가 이미 로드되어 있으면 사용
+    if (Array.isArray(missions) && missions.length > 0) {
+      console.log('missions 로드 성공 (초기):', missions.length);
+      setAvailableMissions(missions);
+      setMissionsLoaded(true);
+      return;
+    }
+
+    // missions가 비어있으면 동적으로 다시 로드 시도
+    try {
+      console.log('missions 동적 import 시도...');
+      const missionsModule = await import("./data/missions");
+      const loadedMissions = missionsModule.missions || missionsModule.default || [];
+      
+      console.log('동적 import 결과:', loadedMissions);
+      
+      if (Array.isArray(loadedMissions) && loadedMissions.length > 0) {
+        console.log('missions 동적 로드 성공:', loadedMissions.length);
+        setAvailableMissions(loadedMissions);
+        setMissionsLoaded(true);
+      } else {
+        console.warn('missions가 비어있습니다:', loadedMissions);
+        // require 방식도 시도
+        try {
+          const reqModule = require("./data/missions");
+          const reqMissions = reqModule.missions || reqModule.default || [];
+          if (Array.isArray(reqMissions) && reqMissions.length > 0) {
+            console.log('missions require 로드 성공:', reqMissions.length);
+            setAvailableMissions(reqMissions);
+            setMissionsLoaded(true);
+          }
+        } catch (reqErr) {
+          console.error('missions require 실패:', reqErr);
+        }
+      }
+    } catch (e) {
+      console.error('missions 동적 로드 실패:', e);
+      // require 방식도 시도
+      try {
+        const reqModule = require("./data/missions");
+        const reqMissions = reqModule.missions || reqModule.default || [];
+        if (Array.isArray(reqMissions) && reqMissions.length > 0) {
+          console.log('missions require 로드 성공 (fallback):', reqMissions.length);
+          setAvailableMissions(reqMissions);
+          setMissionsLoaded(true);
+        }
+      } catch (reqErr) {
+        console.error('missions require 실패 (fallback):', reqErr);
+      }
+    }
+  };
+  
+  checkAndLoadMissions();
 }, []);
 //미션 바꾸기 함수
 const replaceMission = async (index) => {
+  if (!Array.isArray(availableMissions) || availableMissions.length === 0) {
+    console.warn('missions가 비어있거나 배열이 아닙니다');
+    return;
+  }
   const usedIds = dailyMissions.map(m => m.id);
-  const candidates = missions.filter(m => !usedIds.includes(m.id));
+  const candidates = availableMissions.filter(m => !usedIds.includes(m.id));
 
   if (candidates.length === 0) return;
 
@@ -501,8 +595,19 @@ useEffect(() => {
 
   loadCompleted();
 }, []);
-//미션 저장
+//미션 저장 및 로드
 useEffect(() => {
+  // missions가 로드될 때까지 대기
+  if (!missionsLoaded || !Array.isArray(availableMissions) || availableMissions.length === 0) {
+    console.log('missions 로드 대기 중...', {
+      missionsLoaded,
+      availableMissionsLength: availableMissions.length,
+    });
+    return;
+  }
+
+  console.log('dailyMissions 설정 시작, availableMissions:', availableMissions.length);
+
   const loadDaily = async () => {
     const today = getToday();
     const storedDate = await AsyncStorage.getItem("dailyDate");
@@ -511,27 +616,42 @@ useEffect(() => {
 
     // If it's the same day → load everything as-is
     if (storedDate === today && storedMissions) {
-      setDailyMissions(JSON.parse(storedMissions));
-      if (storedCompleted) {
-        setCompletedDailyIds(JSON.parse(storedCompleted));
+      try {
+        const parsed = JSON.parse(storedMissions);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          console.log('저장된 미션 로드:', parsed.length);
+          setDailyMissions(parsed);
+          if (storedCompleted) {
+            setCompletedDailyIds(JSON.parse(storedCompleted));
+          }
+          return;
+        }
+      } catch (e) {
+        console.log('저장된 미션 파싱 실패:', e);
       }
-      return;
     }
 
     // If date changed → generate NEW missions
-    const shuffled = [...missions].sort(() => Math.random() - 0.5);
+    console.log('새 미션 생성, availableMissions:', availableMissions.length);
+    const shuffled = [...availableMissions].sort(() => Math.random() - 0.5);
     const todayMissions = shuffled.slice(0, 3);
+    console.log('생성된 오늘의 미션:', todayMissions.map(m => m.name));
 
     setDailyMissions(todayMissions);
     setCompletedDailyIds([]);
 
-    await AsyncStorage.setItem("dailyMissions", JSON.stringify(todayMissions));
-    await AsyncStorage.setItem("completedDailyIds", JSON.stringify([]));
-    await AsyncStorage.setItem("dailyDate", today);
+    try {
+      await AsyncStorage.setItem("dailyMissions", JSON.stringify(todayMissions));
+      await AsyncStorage.setItem("completedDailyIds", JSON.stringify([]));
+      await AsyncStorage.setItem("dailyDate", today);
+      console.log('미션 저장 완료');
+    } catch (e) {
+      console.log('미션 저장 실패:', e);
+    }
   };
 
   loadDaily();
-}, []);
+}, [missionsLoaded, availableMissions]);
 
 const completeDailyMission = async (mission) => {
   Alert.alert(
@@ -685,8 +805,12 @@ const getMissionsForSelectedDate = (date) => {
                     marginVertical: 8,
                     backgroundColor: "white",
                     borderRadius: 12,
-                    shadowOpacity: 0.1,
-                    shadowRadius: 3,
+                    ...(Platform.OS === 'web' ? {
+                      boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)',
+                    } : {
+                      shadowOpacity: 0.1,
+                      shadowRadius: 3,
+                    }),
                   }}
                 >
                   <Text style={{ fontSize: 16, fontWeight: "600" }}>
@@ -745,47 +869,55 @@ const getMissionsForSelectedDate = (date) => {
         {/* 오늘의 추가 미션 */}
         <View style={[styles.card, {marginTop: 20}]}>
           <Text style={[styles.cardHeader, {fontSize: 20}]}>✨ 오늘의 추가 미션</Text>
-          {dailyMissions.map((m, index) => {
-          const isDone = completedDailyIds.includes(m.id);
-            return (
-          <View 
-          key={m.id}
-          style={{
-          paddingVertical: 10,
-          borderBottomWidth: index < 2 ? 1 : 0,
-          borderColor: "#eee",
-          }}>
-          <Text style={{ fontSize: 16, fontWeight: "600" }}>{m.name}</Text>
-          <Text style={{ color: "#4b5563", marginVertical: 4 }}>
-          {m.explanation}
-          </Text>
-
-          <Text style={{ fontSize: 12, color: "#6b7280" }}>
-          💧 물 {m.water}mL | 🗑️ 쓰레기 {m.waste} kg | 🌍 CO₂ {m.co2}g 절약
-          </Text>
-          {isDone ? (
-            <Text style={{ marginTop: 10, color: "#4CAF50", fontWeight: "700" }}>
-              완료! 🎉
-            </Text>
-          ) : (
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-              <TouchableOpacity
-                style={[styles.btn, styles.btnGhost, { flex: 1 }]}
-                onPress={() => replaceMission(index)}
-              >
-                <Text style={styles.btnGhostText}>바꾸기</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.btn, styles.btnPrimary, { flex: 1 }]}
-                onPress={() => completeDailyMission(m)}
-              >
-                <Text style={styles.btnPrimaryText}>완료하기</Text>
-              </TouchableOpacity>
+          {dailyMissions.length === 0 ? (
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              <Text style={{ color: '#666', marginBottom: 10 }}>미션을 불러오는 중...</Text>
+              <Text style={{ color: '#999', fontSize: 12 }}>잠시만 기다려주세요</Text>
             </View>
+          ) : (
+            dailyMissions.map((m, index) => {
+              const isDone = completedDailyIds.includes(m.id);
+              return (
+                <View 
+                  key={m.id}
+                  style={{
+                    paddingVertical: 10,
+                    borderBottomWidth: index < 2 ? 1 : 0,
+                    borderColor: "#eee",
+                  }}>
+                  <Text style={{ fontSize: 16, fontWeight: "600" }}>{m.name}</Text>
+                  <Text style={{ color: "#4b5563", marginVertical: 4 }}>
+                    {m.explanation}
+                  </Text>
+
+                  <Text style={{ fontSize: 12, color: "#6b7280" }}>
+                    💧 물 {m.water}mL | 🗑️ 쓰레기 {m.waste} kg | 🌍 CO₂ {m.co2}g 절약
+                  </Text>
+                  {isDone ? (
+                    <Text style={{ marginTop: 10, color: "#4CAF50", fontWeight: "700" }}>
+                      완료! 🎉
+                    </Text>
+                  ) : (
+                    <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                      <TouchableOpacity
+                        style={[styles.btn, styles.btnGhost, { flex: 1 }]}
+                        onPress={() => replaceMission(index)}
+                      >
+                        <Text style={styles.btnGhostText}>바꾸기</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.btn, styles.btnPrimary, { flex: 1 }]}
+                        onPress={() => completeDailyMission(m)}
+                      >
+                        <Text style={styles.btnPrimaryText}>완료하기</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              );
+            })
           )}
-        </View>);
-          })}
         </View>
         <StatusBar style="auto" />
 
@@ -891,10 +1023,14 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderColor: '#e5e7eb',
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+    } : {
+      shadowColor: '#000',
+      shadowOpacity: 0.04,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+    }),
   },
   cardHeader: {
     fontSize: 16,
