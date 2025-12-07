@@ -654,6 +654,49 @@ useEffect(() => {
 }, [missionsLoaded, availableMissions]);
 
 const completeDailyMission = async (mission) => {
+  // 실제로 "네!" 눌렀을 때 실행할 공통 로직
+  const handleConfirm = async () => {
+    const now = new Date();
+    const localTime = {
+      year: now.getFullYear(),
+      month: now.getMonth(),
+      date: now.getDate(),
+      hours: now.getHours(),
+      minutes: now.getMinutes(),
+      seconds: now.getSeconds(),
+      timestamp: now.getTime(),
+    };
+
+    // 1) AppContext 로컬 상태 업데이트
+    addCompletedMission({
+      id: `${now.getTime()}-${Math.random()}`,
+      mission: mission.name,
+      completedAt: localTime,
+      timeSlot,
+      emoji: "🌱",
+      water: mission.water,
+      waste: mission.waste,
+      co2: mission.co2,
+    });
+
+    // 2) Firestore에 사용자별 완료 기록 + 통계 저장
+    await saveMissionCompletion(mission, localTime, timeSlot);
+
+    // 3) 오늘 완료한 daily 미션 id 기록
+    const updated = [...completedDailyIds, mission.id];
+    setCompletedDailyIds(updated);
+    await AsyncStorage.setItem("completedDailyIds", JSON.stringify(updated));
+  };
+
+  // 🔹 웹: window.confirm 사용
+  if (Platform.OS === "web") {
+    const ok = window.confirm("정말로 이 미션을 완료하셨나요?");
+    if (!ok) return;           // 취소 시 아무 것도 안 함
+    await handleConfirm();     // 확인 시 완료 로직 실행
+    return;
+  }
+
+  // 🔹 앱(iOS/Android): 기존 Alert.alert 그대로 유지
   Alert.alert(
     "미션 확인",
     "정말로 이 미션을 완료하셨나요?",
@@ -661,40 +704,10 @@ const completeDailyMission = async (mission) => {
       { text: "취소", style: "cancel" },
       {
         text: "네!",
-        onPress: async () => {
-          const now = new Date();
-          const localTime = {
-            year: now.getFullYear(),
-            month: now.getMonth(),
-            date: now.getDate(),
-            hours: now.getHours(),
-            minutes: now.getMinutes(),
-            seconds: now.getSeconds(),
-            timestamp: now.getTime(),
-          };
-
-          // 1) AppContext 로컬 상태 업데이트
-          addCompletedMission({
-            id: `${now.getTime()}-${Math.random()}`,
-            mission: mission.name,
-            completedAt: localTime,
-            timeSlot,
-            emoji: "🌱",
-            water: mission.water,
-            waste: mission.waste,
-            co2: mission.co2,
-          });
-          
-           // 2) Firestore에 사용자별 완료 기록 + 통계 저장
-          await saveMissionCompletion(mission, localTime, timeSlot);
-          
-          const updated = [...completedDailyIds, mission.id];
-          setCompletedDailyIds(updated);
-
-          // SAVE CORRECTLY
-          await AsyncStorage.setItem(
-            "completedDailyIds",
-            JSON.stringify(updated)
+        onPress: () => {
+          // onPress 안에서는 async/await 바로 못 쓰니까 이렇게 감싸줌
+          handleConfirm().catch((e) =>
+            console.log("completeDailyMission 에러:", e)
           );
         },
       },
