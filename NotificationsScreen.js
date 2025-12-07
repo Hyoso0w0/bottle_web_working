@@ -24,6 +24,26 @@ const getWebNotificationTimeouts = () => {
   }
   return typeof window !== 'undefined' ? window.webNotificationTimeouts : [];
 };
+const testWebNotification = async () => {
+  if (Platform.OS !== 'web' || !('Notification' in window)) {
+    alert('이 브라우저는 Notification API를 지원하지 않아요.');
+    return;
+  }
+
+  const permission =
+    Notification.permission === 'granted'
+      ? 'granted'
+      : await Notification.requestPermission();
+
+  if (permission !== 'granted') {
+    alert('알림 권한이 허용되지 않았어요: ' + permission);
+    return;
+  }
+
+  new Notification('테스트 알림', {
+    body: '모바일에서 이게 보이면 Notification API는 지원 중!',
+  });
+};
 
 const clearWebNotifications = () => {
   const timeouts = getWebNotificationTimeouts();
@@ -1706,6 +1726,15 @@ const NotificationsScreen = ({ navigation }) => {
           >
             <Text style={styles.btnPrimaryText}>+ 추가</Text>
           </TouchableOpacity>
+          {/* ✅ 여기 추가 */}
+  {Platform.OS === 'web' && (
+    <TouchableOpacity
+      style={[styles.btn, styles.btnOutline, { marginTop: 8 }]}
+      onPress={testWebNotification}
+    >
+      <Text style={styles.btnOutlineText}>웹 알림 테스트</Text>
+    </TouchableOpacity>
+  )}
         </View>
 
         <View style={styles.card}>
