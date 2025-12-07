@@ -25,24 +25,56 @@ const getWebNotificationTimeouts = () => {
   return typeof window !== 'undefined' ? window.webNotificationTimeouts : [];
 };
 const testWebNotification = async () => {
-  if (Platform.OS !== 'web' || !('Notification' in window)) {
-    alert('이 브라우저는 Notification API를 지원하지 않아요.');
-    return;
+  try {
+    alert('STEP 1: testWebNotification 들어옴');
+
+    if (Platform.OS !== 'web') {
+      alert('STEP 2: Platform.OS !== web → ' + Platform.OS);
+      return;
+    }
+
+    if (typeof window === 'undefined') {
+      alert('STEP 3: window 없음');
+      return;
+    }
+
+    const hasNotification = 'Notification' in window;
+    alert('STEP 4: Notification in window = ' + hasNotification);
+
+    if (!hasNotification) {
+      alert('이 브라우저는 Notification API를 지원하지 않아요.');
+      return;
+    }
+
+    alert('STEP 5: 현재 permission = ' + Notification.permission);
+
+    let permission = Notification.permission;
+
+    if (permission !== 'granted') {
+      alert('STEP 6: requestPermission 호출 직전');
+      permission = await Notification.requestPermission();
+      alert('STEP 7: requestPermission 결과 = ' + permission);
+    }
+
+    if (permission !== 'granted') {
+      alert('STEP 8: 최종적으로 권한 없음: ' + permission);
+      return;
+    }
+
+    alert('STEP 9: new Notification 호출할게요');
+
+    const n = new Notification('테스트 알림', {
+      body: '이 알림이 보이면 Notification은 정상 동작 중!',
+    });
+
+    // 혹시 에러 로그
+    n.onerror = (err) => {
+      alert('STEP 10: Notification onerror: ' + JSON.stringify(err));
+    };
+
+  } catch (e) {
+    alert('ERROR: ' + (e && e.message ? e.message : String(e)));
   }
-
-  const permission =
-    Notification.permission === 'granted'
-      ? 'granted'
-      : await Notification.requestPermission();
-
-  if (permission !== 'granted') {
-    alert('알림 권한이 허용되지 않았어요: ' + permission);
-    return;
-  }
-
-  new Notification('테스트 알림', {
-    body: '모바일에서 이게 보이면 Notification API는 지원 중!',
-  });
 };
 
 const clearWebNotifications = () => {
