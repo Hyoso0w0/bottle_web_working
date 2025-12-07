@@ -242,7 +242,7 @@ const todayAlarms = useMemo(() => {
   const daysInMonth = getDaysInMonth(currentDate);
   const firstDay = getFirstDayOfMonth(currentDate);
 
-  // 특정 날짜에 완료한 미션 수 계산
+   // 특정 날짜에 완료한 미션 수 계산
   const getMissionCountForDate = useCallback(
     (date) => {
       const targetYear = date.getFullYear();
@@ -250,17 +250,27 @@ const todayAlarms = useMemo(() => {
       const targetDay = date.getDate();
 
       return completedMissions.filter((mission) => {
+        if (!mission) return false;
+
         const completedAt = mission.completedAt;
+
+        // 📌 mission 텍스트 없는 이상한 데이터는 무시
+        if (!mission.mission) return false;
+        if (!completedAt) return false;
+
         // 로컬 시간 객체인 경우
-        if (completedAt && typeof completedAt === 'object' && completedAt.year !== undefined) {
+        if (typeof completedAt === 'object' && completedAt.year !== undefined) {
           return (
             completedAt.year === targetYear &&
             completedAt.month === targetMonth &&
             completedAt.date === targetDay
           );
         }
-        // ISO 문자열인 경우 (하위 호환)
+
+        // 혹시 문자열(옛 버전 데이터)이면 방어적으로 처리
         const missionDate = new Date(completedAt);
+        if (Number.isNaN(missionDate.getTime())) return false;
+
         return (
           missionDate.getFullYear() === targetYear &&
           missionDate.getMonth() === targetMonth &&
@@ -728,15 +738,31 @@ const getMissionsForSelectedDate = (date) => {
   const m = date.getMonth();
   const d = date.getDate();
 
-  // 1) Filter missions completed on that date
+  // 1) 해당 날짜 + mission 텍스트가 있는 데이터만 남긴다
   const missionsOfDay = completedMissions.filter((item) => {
+    if (!item) return false;
+
     const c = item.completedAt;
+    if (!item.mission) return false;  // ✅ undefined 줄 제거
     if (!c) return false;
 
-    return c.year === y && c.month === m && c.date === d;
+    // 로컬 time 객체 형태
+    if (typeof c === 'object' && c.year !== undefined) {
+      return c.year === y && c.month === m && c.date === d;
+    }
+
+    // 혹시 문자열로 저장된 옛 데이터도 방어적으로 처리
+    const missionDate = new Date(c);
+    if (Number.isNaN(missionDate.getTime())) return false;
+
+    return (
+      missionDate.getFullYear() === y &&
+      missionDate.getMonth() === m &&
+      missionDate.getDate() === d
+    );
   });
 
-  // 2) Calculate totals
+  // 2) 합산
   let totals = { water: 0, waste: 0, co2: 0 };
 
   missionsOfDay.forEach((m) => {
