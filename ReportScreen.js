@@ -91,7 +91,7 @@ const ReportScreen = ({ navigation }) => {
           {/* Water Saved */}
           <View style={styles.impactBox}>
             <Text style={styles.impactLabel}>절약한 물</Text>
-            <Text style={styles.impactValue}>{stats.totalWater} mL</Text>
+            <Text style={styles.impactValue}>{stats.totalWater} L</Text>
           </View>
 
           {/* Carbon Reduced */}

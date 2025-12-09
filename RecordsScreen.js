@@ -238,7 +238,7 @@ const progress = Math.min(fullSuccessDays/totalDays, 1);
                   <Text style={styles.statistics_icon}>💧</Text>
                 </View>
                 <View>
-                  <Text style={[styles.statistics_value, {marginLeft: 10}, {marginTop: 10}, {fontWeight: 700}, {color: '#3B82F6'}]}> 물 절약 미션 {stats.totalWater} mL</Text>
+                    <Text style={[styles.statistics_value, {marginLeft: 10}, {marginTop: 10}, {fontWeight: 700}, {color: '#3B82F6'}]}> 물 절약 미션 {Math.round(stats.totalWater)/1000} L</Text>
                   <View style={
                     [styles.button, {
                     backgroundColor: '#60A5FA',
@@ -250,7 +250,7 @@ const progress = Math.min(fullSuccessDays/totalDays, 1);
                     
                     }]}>
                       <Text style={{fontWeight: 700, color: '#fff', fontSize: 12,}}>
-                       = 샤워 {Math.floor(stats.totalWater / 1000)} 회분
+                       = 샤워 {Math.floor(stats.totalWater / 60000)} 회분
                       </Text>
                     </View>
                 </View>
@@ -259,8 +259,8 @@ const progress = Math.min(fullSuccessDays/totalDays, 1);
               <LevelSection
                 label="물 절약 미션"
                 emoji="💧"
-                unit="mL"
-                value={safeStats.totalWater}
+                unit="L"
+                value={stats.totalWater/1000}
                 stages={levelStages.water}
               />
           </View>
@@ -313,7 +313,7 @@ const progress = Math.min(fullSuccessDays/totalDays, 1);
                   alignSelf: 'flex-start',
                   }]}> 
                     <Text style={{fontWeight: 700, color: '#fff', fontSize: 12,}}>
-                    = 나무 {Math.floor(stats.totalCO2 / 10000)} 개
+                    = 나무 {Math.floor(stats.totalCO2 / 1000)} 개
                     </Text>
                   </View>
                 </View>
