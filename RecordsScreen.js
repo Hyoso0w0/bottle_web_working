@@ -10,58 +10,15 @@ import {
 import { Feather, MaterialIcons } from "@expo/vector-icons";
 import { AppContext } from "./AppContext";
 import LevelSection from "./LevelSection";
+import { levelStages } from "./data/levels"
 import { signOut } from "firebase/auth";
 import { auth } from "./firebase";
-
-// levelStages import 안전하게 처리 - 웹 호환성 고려
-import { levelStages as levelStagesImport } from "./data/levels";
-
-let levelStages = {
-  water: [],
-  waste: [],
-  carbon: []
-};
-
-try {
-  // ES6 import가 제대로 작동하는지 확인
-  if (levelStagesImport && typeof levelStagesImport === 'object') {
-    levelStages = {
-      water: Array.isArray(levelStagesImport.water) ? levelStagesImport.water : [],
-      waste: Array.isArray(levelStagesImport.waste) ? levelStagesImport.waste : [],
-      carbon: Array.isArray(levelStagesImport.carbon) ? levelStagesImport.carbon : []
-    };
-  } else {
-    // require 방식도 시도 (fallback)
-    try {
-      const levelsModule = require("./data/levels");
-      const loadedStages = levelsModule.levelStages || levelsModule.default || null;
-      if (loadedStages && typeof loadedStages === 'object') {
-        levelStages = {
-          water: Array.isArray(loadedStages.water) ? loadedStages.water : [],
-          waste: Array.isArray(loadedStages.waste) ? loadedStages.waste : [],
-          carbon: Array.isArray(loadedStages.carbon) ? loadedStages.carbon : []
-        };
-      }
-    } catch (reqErr) {
-      console.error('levelStages require 실패:', reqErr);
-    }
-  }
-} catch (e) {
-  console.error('levelStages를 로드할 수 없습니다:', e);
-}
 
 
 
 const RecordsScreen = ({ navigation }) => {
-  const { completedMissions, stats, cookieStats } = useContext(AppContext);
+  const { completedMissions, stats } = useContext(AppContext);
   const [showCompleted, setShowCompleted] = useState(false);
-  
-  // stats가 undefined일 경우를 대비한 기본값 설정
-  const safeStats = stats || {
-    totalWater: 0,
-    totalWaste: 0,
-    totalCO2: 0,
-  };
   const handleLogout = async () => {
     try {
       await signOut(auth);          // ✅ Firebase에서 로그아웃
@@ -74,6 +31,67 @@ const RecordsScreen = ({ navigation }) => {
       console.log("로그아웃 실패: ", e);
     }
   };
+
+  // -----------------🔥 1달 연속 체크 함수 -----------------
+  const getDaysInMonth = (year, month) => {
+  return new Date(year, month + 1, 0).getDate();
+};
+
+  const getMonthlySuccessCount = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+
+  // 이번 달에 해당하는 mission만 필터링
+  const thisMonthMissions = completedMissions.filter(mis => {
+    const d = mis.completedAt;
+    if (!d) return false;
+
+    const dateObj =
+      typeof d === "object" && d.year !== undefined
+        ? new Date(d.year, d.month, d.date)
+        : new Date(d);
+
+    return (
+      dateObj.getFullYear() === y &&
+      dateObj.getMonth() === m
+    );
+  });
+
+  // 날짜별로 몇 개 미션을 했는지 집계
+  const dailyCount = {};
+
+  thisMonthMissions.forEach(mis => {
+    const d = mis.completedAt;
+    const dateObj =
+      typeof d === "object" && d.year !== undefined
+        ? new Date(d.year, d.month, d.date)
+        : new Date(d);
+
+    const dayKey = dateObj.getDate();
+
+    dailyCount[dayKey] = (dailyCount[dayKey] || 0) + 1;
+  });
+
+  // 하루에 3개 미션 완료한 날짜만 카운트
+  let fullSuccessDays = 0;
+  Object.values(dailyCount).forEach(count => {
+    if (count >= 3) fullSuccessDays++;
+  });
+
+  return fullSuccessDays;
+};
+const fullSuccessDays = getMonthlySuccessCount();
+
+const now = new Date();
+const totalDays = getDaysInMonth(
+  now.getFullYear(),
+  now.getMonth()
+);
+
+const progress = Math.min(fullSuccessDays/totalDays, 1);
+
+  
 
   return (
     <View style={styles.container}>
@@ -104,7 +122,7 @@ const RecordsScreen = ({ navigation }) => {
           <View style={styles.profileRow}>
             <View style={styles.profileImage}>
               <Image
-                  source={{ uri: "https://via.placeholder.com/80" }} 
+                  source={require("./assets/default_profile_picture.png")}
                   style={{ width: 64, height: 64, borderRadius: 32 }}
                 />
             </View>
@@ -112,7 +130,7 @@ const RecordsScreen = ({ navigation }) => {
             <View style={styles.userInfo}>
               <View style={styles.badge}>
                 <Text style={styles.badgeIcon}>🌈</Text>
-                <Text style={styles.badgeText}>환경 지킴이</Text>
+                <Text style={styles.badgeText}>Lvl.19 제로웨이스트 미션 마스터</Text>
               </View>
               <Text style={styles.username}>이그린님</Text>
             </View>
@@ -135,70 +153,20 @@ const RecordsScreen = ({ navigation }) => {
               </View>
 
               <View style={styles.progressPercentBox}>
-                <Text style={styles.progressPercent}>75%</Text>
+                <Text style={styles.progressPercent}>{Math.round(progress * 100)}%</Text>
               </View>
             </View>
 
             <View style={styles.progressBarBackground}>
-              <View style={[styles.progressBarFill, { width: "75%" }]} />
+              <View style={[styles.progressBarFill, { width: `${progress * 100}%` }]} />
             </View>
           </View>
 
             {/* Cookies */}
-          <View style={styles.cookieCard}>
-            <Text style={styles.cookieText}>🍪 모은 쿠키 개수: {cookieStats.totalCookies} 개</Text>
-          </View>
 
         </View>
-
-        
 
         {/* Navigation Icons */}
-        <View style={styles.navGridCard}>
-          <View style={styles.navGrid}>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('Calendar')}
-              style={styles.navButton}
-            >
-              <View
-                style={[styles.navIconCircle, { backgroundColor: "#82C91E" }]}
-              >
-                <Feather name="calendar" size={28} color="#fff" />
-              </View>
-              <Text style={styles.navText}>캘린더</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => navigation.navigate('Report')}
-              style={styles.navButton}
-            >
-              <View
-                style={[styles.navIconCircle, { backgroundColor: "#FFC300" }]}
-              >
-                <Feather name="bar-chart-2" size={28} color="#fff" />
-              </View>
-              <Text style={styles.navText}>리포트</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Quick Stats */}
-        <View style={styles.statsGrid}>
-          <View style={styles.statBoxYellow}>
-            <Text style={styles.statLabel}>연속 실천</Text>
-            <Text style={styles.statValue}>7일 🔥</Text>
-          </View>
-
-          <TouchableOpacity
-            onPress={() => setShowCompleted(!showCompleted)}
-            style={styles.statBoxGreen}
-          >
-            <Text style={styles.statLabel}>완료한 미션</Text>
-            <Text style={styles.statValue}>
-              {completedMissions.length}개 ⭐
-            </Text>
-          </TouchableOpacity>
-        </View>
 
         {/* Completed Missions List (Toggle) */}
         {showCompleted && (
@@ -217,60 +185,110 @@ const RecordsScreen = ({ navigation }) => {
             )}
           </View>
         )}
-
-        <Text style={styles.statistics_title}>    나의 환경 절약 기록</Text>
-
         <View style={styles.statistics_card}>
+           <Text style={styles.statistics_title}> 나의 환경 절약 기록</Text>
           <View style={styles.statistics_card_water}>
-            <View
-                style={[styles.statistics_circle, { backgroundColor: "#fff", borderColor: "#90e3ffff", borderWidth: 2 }]}
-              >
-                <Text style={styles.statistics_icon}>💧</Text>
-              </View>
-            <Text style={styles.statistics_value}> 물 {safeStats.totalWater} mL 절약</Text>
+            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+              <View
+                  style={[styles.statistics_circle, { backgroundColor: "#dbeafe", borderColor: "#90e3ffff", borderWidth: 2 }]}
+                >
+                  <Text style={styles.statistics_icon}>💧</Text>
+                </View>
+                <View>
+                  <Text style={[styles.statistics_value, {marginLeft: 10}, {marginTop: 10}, {fontWeight: 700}, {color: '#3B82F6'}]}> 물 절약 미션 {Math.round(stats.totalWater)/1000} L</Text>
+                  <View style={
+                    [styles.button, {
+                    backgroundColor: '#60A5FA',
+                    borderRadius: 15,
+                    paddingHorizontal: 10,
+                    paddingVertical: 10,
+                    marginLeft: 10,
+                    alignSelf: 'flex-start',
+                    
+                    }]}>
+                      <Text style={{fontWeight: 700, color: '#fff', fontSize: 12,}}>
+                       = 샤워 {Math.floor(stats.totalWater / 60000)} 회분
+                      </Text>
+                    </View>
+                </View>
+              
+            </View>
               <LevelSection
                 label="물 절약 미션"
                 emoji="💧"
-                unit="mL"
-                value={safeStats.totalWater}
+                unit="L"
+                value={stats.totalWater/1000}
                 stages={levelStages.water}
               />
           </View>
           <View style={styles.statistics_card_waste}>
-            <View
-                style={[styles.statistics_circle, { backgroundColor: "#fff", borderColor: "#ff9e61ff", borderWidth: 2 }]}
-              >
-                <Text style={styles.statistics_icon}>🗑️</Text>
+             <View style={{flexDirection: 'row', alignItems: 'center'}}>
+              <View
+                  style={[styles.statistics_circle, { backgroundColor: "#ffedd4", borderColor: "#ff9e61ff", borderWidth: 2 }]}
+                >
+                  <Text style={styles.statistics_icon}>🗑️</Text>
+                </View>
+              <View>
+                < Text style={[styles.statistics_value, {marginLeft: 10}, {marginTop: 10}, {fontWeight: 700}, {color: '#fb7324ff'}]}>쓰레기 절감 미션 {stats.totalWaste}kg</Text>
+                <View style={
+                [styles.button, {
+                backgroundColor: '#fb7324ff',
+                borderRadius: 15,
+                padding: 10,
+                marginLeft: 10,
+                alignSelf: 'flex-start',
+                }]}> 
+                  <Text style={{fontWeight: 700, color: '#fff', fontSize: 12,}}>
+                  = 일회용컵 {Math.floor(stats.totalWaste * 100)} 개
+                  </Text>
+                </View>
               </View>
-          < Text style={styles.statistics_value}>쓰레기 {safeStats.totalWaste}kg 절약</Text>
+            </View>
             <LevelSection
               label="쓰레기 절감 미션"
               emoji="🗑️"
               unit="kg"
-              value={safeStats.totalWaste}
+              value={stats.totalWaste}
               stages={levelStages.waste}
             />
           </View>
           <View style={styles.statistics_card_co2}>
-            <View
-                style={[styles.statistics_circle, { backgroundColor: "#fff", borderColor: "#81f77bff", borderWidth: 2 }]}
-              >
-                <Text style={styles.statistics_icon}>🌳</Text>
-              </View>
-            <Text style={styles.statistics_value}>CO₂ {safeStats.totalCO2} g 절약</Text>
+            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+              <View
+                  style={[styles.statistics_circle, { backgroundColor: "#dcfce7", borderColor: "#81f77bff", borderWidth: 2 }]}
+                >
+                  <Text style={styles.statistics_icon}>🌳</Text>
+                </View>
+                <View>
+                  <Text style={[styles.statistics_value, {marginLeft: 10}, {marginTop: 10}, {fontWeight: 700}, {color: '#22C55E'}]}>탄소 절감 미션 {stats.totalCO2} g</Text>
+                  <View style={
+                  [styles.button, {
+                  backgroundColor: '#4ADE80',
+                  borderRadius: 15,
+                  padding: 10,
+                  marginLeft: 10,
+                  alignSelf: 'flex-start',
+                  }]}> 
+                    <Text style={{fontWeight: 700, color: '#fff', fontSize: 12,}}>
+                    = 나무 {Math.floor(stats.totalCO2 / 1000)} 개
+                    </Text>
+                  </View>
+                </View>
+            </View>
                <LevelSection
                 label="탄소 절감 미션"
                 emoji="🌳"
                 unit="g"
-                value={safeStats.totalCO2}
+                value={stats.totalCO2}
                 stages={levelStages.carbon}
               />
           </View>
         </View>
 
         <View>
-          <Text style={[styles.statistics_title, {marginTop: 10}]}>     나의 습관 변화</Text>
-          <View style={[styles.statistics_card]}>
+          <View style={[styles.statistics_card, {marginTop: 10, marginBottom: 10}]}>
+            <Text style={[styles.statistics_title, {marginBottom: 10}]}> 📈 나의 습관 변화</Text>
+            <Text style={[{fontSize: 17}, {color: '#666'}, {marginBottom: 15}]}> 가장 많이 완료한 미션 Top 3</Text>
           {completedMissions.length > 0 ? (
             // Compute top 3 most frequent missions
             (() => {
@@ -285,12 +303,23 @@ const RecordsScreen = ({ navigation }) => {
                     .slice(0, 3);
         
                   return top3.map((habit, idx) => (
-                    <View key={idx} style={[styles.habitRow, { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }]}>
-                      <Text style={[styles.habitIcon, {fontSize: 24}]}>✅</Text>
-                      <View>
-                        <Text style={[styles.habitTitle, { fontSize: 14, fontWeight: "600" }]}>{habit.mission}</Text>
-                        <Text style={[styles.habitSubtitle, {textAlign: 'center'}]}>꾸준히 실천 중!</Text>
-                      </View>
+                    <View key={idx} style={[styles.statistics_card, { 
+                      flexDirection: "row", 
+                      alignItems: "center", 
+                      justifyContent: "space-between", 
+                      marginBottom: 8, 
+                      backgroundColor: '#f7fee7',
+                      borderWidth: 2, }]}>
+                        <View
+                          style={[styles.statistics_circle, { backgroundColor: "#fff", borderColor: "#81f77bff", borderWidth: 2 }]}
+                        >
+                          <Text style={styles.habitIcon}>🌳</Text>
+                        </View>
+                        <View style={{ flexDirection: 'column' }}>
+                          <Text style={[styles.habitTitle, { fontSize: 16, fontWeight: "600" }]}>{habit.mission}</Text>
+                          <Text style={[styles.habitSubtitle, {textAlign: 'center'}]}>꾸준히 실천 중!</Text>
+                        </View>
+                       <Feather name="check-circle" size={20} color="#4CAF50" />
                       <Text style={styles.habitCount}>{habit.count}회</Text>
                     </View>
                   ));
@@ -300,6 +329,32 @@ const RecordsScreen = ({ navigation }) => {
               )}
               </View>
         </View> 
+        
+        <View 
+        style={[
+          styles.statistics_card, {
+            borderWidth: 1,
+            borderColor: '#d8f999',
+            padding: 10,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginTop: 10,
+        }]}>
+          <Text style={{fontSize: 20}}>📊</Text>
+          <View style={{ flex: 1, marginLeft: 10, marginRight: 10 }}>
+            <Text style={[{ fontSize: 17, fontWeight: 600, color: '#616161' }]}>지금까지 보들보틀과 함께 줄인 쓰레기 양은?</Text>
+          </View>
+          <TouchableOpacity
+              onPress={() => navigation.navigate('CumulativeReport')}
+            >
+              <View
+                style={[styles.button]}
+              >
+                <Text style={{fontSize: 15, fontWeight: 600, color: '#fff'}}>확인하기</Text>
+              </View>
+            </TouchableOpacity>
+        </View>
       </ScrollView>
 
       {/* Bottom Navigation */}
@@ -365,13 +420,14 @@ const styles = StyleSheet.create({
 
   /* Profile */
   profileCard: {
-    backgroundColor: "white",
+    backgroundColor: "#9ae600",
     margin: 16,
     padding: 16,
     borderRadius: 20,
     shadowColor: "#000",
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
   },
   profileRow: {
     flexDirection: "row",
@@ -390,11 +446,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
+    alignSelf: 'flex-start',
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
   },
   badgeIcon: { fontSize: 14 },
   badgeText: { fontSize: 12, marginLeft: 4, color: "#4CAF50" },
 
-  username: { fontSize: 18, fontWeight: "700", marginTop: 4, color: "#222" },
+  username: { fontSize: 25, fontWeight: "600", marginTop: 5, color: "#fff" },
 
   settingsButton: {
     backgroundColor: "#4CAF50",
@@ -403,7 +464,18 @@ const styles = StyleSheet.create({
   },
 
   /* Progress */
-  progressCard: { marginTop: 16 },
+  progressCard: { 
+    marginTop: 16,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 2,
+    backgroundColor: '#b3ec40',
+    borderColor: '#caf27a',
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+   },
   progressHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -411,7 +483,7 @@ const styles = StyleSheet.create({
   },
   progressLeft: { flexDirection: "row", alignItems: "center" },
   progressIcon: { fontSize: 18, marginRight: 6 },
-  progressLabel: { fontSize: 16, fontWeight: "600", color: "#444" },
+  progressLabel: { fontSize: 16, fontWeight: "600", color: "#ffffffff" },
 
   progressPercentBox: {
     backgroundColor: "#E8F5E9",
@@ -542,36 +614,41 @@ const styles = StyleSheet.create({
   statistics_card: {
     marginLeft: 15,
     marginRight: 15,
+    marginBottom: 15,
     borderRadius: 16,
     padding: 20,
     borderColor: "#cdf78d",
     borderWidth: 1,
     backgroundColor: "#fff",
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
   },
   statistics_card_waste: {
     borderRadius: 10,
-    borderColor: "#ff9e61ff",
+    borderColor: "#d8f999",
     borderWidth: 2,
     padding: 10,
-    backgroundColor: '#ffefe2ff',
+    backgroundColor: '#fff7ed',
     marginTop: 5,
     marginBottom: 5,
   },
   statistics_card_water: {
     borderRadius: 10,
-    borderColor: "#90e3ffff",
+    borderColor: "#d8f999",
     borderWidth: 2,
     padding: 10,
-    backgroundColor: '#eafbffff',
+    backgroundColor: '#eff6ff',
     marginTop: 5,
     marginBottom: 5,
   },
   statistics_card_co2: {
     borderRadius: 10,
-    borderColor: '#81f77bff',
+    borderColor: '#d8f999',
     borderWidth: 2,
     padding: 10,
-    backgroundColor: '#e9ffe7ff',
+    backgroundColor: '#f0fdf4',
     marginTop: 5,
     marginBottom: 5,
   },
@@ -619,6 +696,19 @@ logoutText: {
   color: "#444",
   fontWeight: "600",
 },
+button: {
+  borderRadius: 12,
+  paddingVertical: 10,
+  paddingHorizontal: 14,
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: '#9ae600',
+},
+habitCount: { fontSize: 16, fontWeight: "600", color: "#4CAF50" },
+habitTitle: { fontSize: 14, fontWeight: "600", marginBottom: 4, },
+habitSubtitle: { fontSize: 12, color: "#555" },
+habitRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+habitIcon: { fontSize: 22 },
 });
 
 export default RecordsScreen

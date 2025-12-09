@@ -7,7 +7,7 @@ import {
   setDoc,
   increment,
   serverTimestamp,
-  getDoc, 
+  getDoc,
 } from "firebase/firestore";
 
 
@@ -71,9 +71,8 @@ export const saveAlarmsForUser = async (alarmsList) => {
       id: a.id,
       enabled: a.enabled,
       time: `${a.ampm} ${a.hour}:${a.minute}`,
-      repeatDaily: a.repeatDaily,
       repeatDays: a.repeatDays,
-      selectedYMD: a.selectedYMD,
+      emoji: a.emoji,
     }))
   );
 
@@ -114,8 +113,8 @@ export const saveAlarmsForUser = async (alarmsList) => {
 export const loadAlarmsForUser = async () => {
   const user = auth.currentUser;
   if (!user) {
-    console.log("⚠️ [loadAlarmsForUser] user 없음, null 반환");
-    return null;
+    console.log("⚠️ [loadAlarmsForUser] user 없음, [] 반환");
+    return [];
   }
 
   const userRef = doc(db, "users", user.uid);
@@ -124,7 +123,7 @@ export const loadAlarmsForUser = async () => {
 
   if (!snap.exists()) {
     console.log("ℹ️ [loadAlarmsForUser] 문서 없음 (처음일 수 있음)");
-    return null;
+    return [];
   }
 
   const data = snap.data();
@@ -134,3 +133,29 @@ export const loadAlarmsForUser = async () => {
 
   return data.alarms || [];
 };
+
+
+export const updateAlarmCompletion = async (uid, alarms) => {
+  try {
+    const alarmsDocRef = doc(db, "users", uid, "meta", "alarms"); // same doc as saveAlarmsForUser
+    await setDoc(
+      alarmsDocRef,
+      {
+        alarms,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // optional quick verification (like saveAlarmsForUser does)
+    const snap = await getDoc(alarmsDocRef);
+    if (!snap.exists()) {
+      console.log("⚠️ updateAlarmCompletion: doc not found after setDoc");
+    } else {
+      console.log("✅ updateAlarmCompletion: saved alarms count =", (snap.data().alarms || []).length);
+    }
+  } catch (e) {
+    console.log("🔥 Firestore 알람 업데이트 오류:", e);
+  }
+};
+

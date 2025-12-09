@@ -1,11 +1,12 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Feather } from "@expo/vector-icons";
 
 // Props:
 // - repeatDays: array of numbers 0-6 (0=Sun, 6=Sat)
 // - setRepeatDays: function to update repeatDays state
 const WeekdayPicker = ({ repeatDays, setRepeatDays }) => {
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const days = ['일', '월', '화', '수', '목', '금', '토'];
 
   const toggleDay = (index) => {
     if (repeatDays.includes(index)) {
@@ -16,8 +17,18 @@ const WeekdayPicker = ({ repeatDays, setRepeatDays }) => {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.label}>반복 요일 선택</Text>
+    <View style={[styles.container, { 
+      backgroundColor: '#fff',
+      borderRadius: 10,
+      borderWidth: 2,
+      borderColor: '#d8f999',
+      padding: 20
+       }]}>
+      <View style={{flexDirection: 'row', marginBottom: 10}}>
+        <Feather name="calendar" size={22} color="#689F38" />
+        <Text style={styles.label}>  알림 요일</Text>
+      </View>
+      
       <View style={styles.row}>
         {days.map((day, idx) => {
           const isActive = repeatDays.includes(idx);
@@ -44,7 +55,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   label: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     color: '#111827',
     marginBottom: 6,
@@ -64,8 +75,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   dayBtnActive: {
-    backgroundColor: '#3c8c4c',
-    borderColor: '#3c8c4c',
+    backgroundColor: '#9ae600',
+    borderColor: '#9ae600',
   },
   dayText: {
     fontSize: 14,

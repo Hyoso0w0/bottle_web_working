@@ -2,17 +2,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-
-// 웹에서는 알림 모듈을 조건부로 import
-let Notifications = null;
-if (Platform.OS !== 'web') {
-  try {
-    Notifications = require('expo-notifications');
-  } catch (e) {
-    console.warn('expo-notifications를 로드할 수 없습니다:', e);
-  }
-}
 
 // 🔥 Firebase Auth 관련
 import { onAuthStateChanged } from 'firebase/auth';
@@ -57,23 +48,17 @@ import RecordsScreen from './RecordsScreen';
 import NotificationsScreen from './NotificationsScreen';
 import CalendarScreen from './CalendarScreen';
 import ReportScreen from './ReportScreen';
+import CumulativeReportScreen from './CumulativeReportScreen';
 
 // 알림 핸들러 설정 (앱이 foreground일 때 어떻게 보일지)
-// 웹에서는 알림 기능이 제한적이므로 플랫폼 체크
-if (Platform.OS !== 'web' && Notifications) {
-  try {
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
-    });
-  } catch (e) {
-    console.warn('알림 핸들러 설정 실패:', e);
-  }
-}
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 /** ---------- 네비게이션 ---------- **/
 const Stack = createNativeStackNavigator();
@@ -104,140 +89,7 @@ export default function App() {
   const onLogout = () => signOut(auth);
 
   // 알림 스케줄링 헬퍼 함수 (필요하면 NotificationsScreen 등에서 import해서 써도 됨)
-  // 웹 알림 유틸
-  const requestWebNotificationPermission = async () => {
-    if (Platform.OS !== 'web' || !('Notification' in window)) {
-      return false;
-    }
-    
-    if (Notification.permission === 'granted') {
-      return true;
-    }
-    
-    if (Notification.permission !== 'denied') {
-      const permission = await Notification.requestPermission();
-      return permission === 'granted';
-    }
-    
-    return false;
-  };
-
-  const showWebNotification = (title, body, data = {}) => {
-    if (Platform.OS !== 'web' || !('Notification' in window)) {
-      return;
-    }
-    
-    if (Notification.permission === 'granted') {
-      const notification = new Notification(title, {
-        body,
-        icon: '/favicon.png',
-        badge: '/favicon.png',
-        tag: data.alarmId || 'default',
-        requireInteraction: false,
-      });
-      
-      notification.onclick = () => {
-        window.focus();
-        notification.close();
-      };
-      
-      setTimeout(() => {
-        notification.close();
-      }, 5000);
-    }
-  };
-
-  const scheduleWebNotification = (alarm, triggerDate) => {
-    if (Platform.OS !== 'web') return null;
-    
-    const now = new Date();
-    const delay = triggerDate.getTime() - now.getTime();
-    
-    if (delay <= 0) return null;
-    
-    return setTimeout(() => {
-      showWebNotification(
-        '마이에코 🌱',
-        alarm.message || '알림 시간이에요!',
-        { alarmId: alarm.id }
-      );
-    }, delay);
-  };
-
   const scheduleAlarms = async (alarmsList) => {
-    // 웹에서는 브라우저 Notification API 사용
-    if (Platform.OS === 'web') {
-      await requestWebNotificationPermission();
-      
-      // 기존 웹 알림 클리어 (전역 변수에 저장 필요)
-      if (typeof window !== 'undefined' && window.webNotificationTimeouts) {
-        window.webNotificationTimeouts.forEach(timeout => clearTimeout(timeout));
-        window.webNotificationTimeouts = [];
-      } else if (typeof window !== 'undefined') {
-        window.webNotificationTimeouts = [];
-      }
-      
-      const pad2 = (n) => String(n).padStart(2, '0');
-      const as24h = (h12, meridiem) => {
-        if (meridiem === 'AM') return h12 % 12;
-        return (h12 % 12) + 12;
-      };
-
-      for (const alarm of alarmsList) {
-        if (!alarm.enabled) continue;
-        if (!alarm.hour || alarm.minute === undefined || !alarm.ampm) continue;
-
-        const hour24 = as24h(alarm.hour, alarm.ampm);
-
-        if (alarm.repeatDaily) {
-          // 매일 반복 - 다음 알림 시간 계산
-          const now = new Date();
-          const todayAtTime = new Date(
-            now.getFullYear(),
-            now.getMonth(),
-            now.getDate(),
-            hour24,
-            alarm.minute,
-            0,
-            0
-          );
-
-          let firstNotificationTime = todayAtTime;
-          if (todayAtTime <= now) {
-            firstNotificationTime = new Date(
-              todayAtTime.getTime() + 24 * 60 * 60 * 1000
-            );
-          }
-
-          const timeoutId = scheduleWebNotification(alarm, firstNotificationTime);
-          if (timeoutId && typeof window !== 'undefined') {
-            window.webNotificationTimeouts.push(timeoutId);
-          }
-        } else if (alarm.selectedYMD) {
-          // 특정 날짜 한 번
-          const when = new Date(
-            alarm.selectedYMD.year,
-            alarm.selectedYMD.month,
-            alarm.selectedYMD.day,
-            hour24,
-            alarm.minute,
-            0,
-            0
-          );
-          const now = new Date();
-          if (when > now) {
-            const timeoutId = scheduleWebNotification(alarm, when);
-            if (timeoutId && typeof window !== 'undefined') {
-              window.webNotificationTimeouts.push(timeoutId);
-            }
-          }
-        }
-      }
-      
-      console.log('웹 알림 스케줄링 완료:', window.webNotificationTimeouts?.length || 0);
-      return;
-    }
-
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
 
@@ -267,72 +119,6 @@ export default function App() {
           data: { screen: 'Home', alarmId: alarm.id },
         };
 
-        if (alarm.repeatDaily) {
-          // 매일 반복
-          const now = new Date();
-          const todayAtTime = new Date(
-            now.getFullYear(),
-            now.getMonth(),
-            now.getDate(),
-            hour24,
-            alarm.minute,
-            0,
-            0
-          );
-
-          let firstNotificationTime = todayAtTime;
-          if (todayAtTime <= now) {
-            // 오늘 시간이 지났으면 내일
-            firstNotificationTime = new Date(
-              todayAtTime.getTime() + 24 * 60 * 60 * 1000
-            );
-          }
-
-          try {
-            const notificationId =
-              await Notifications.scheduleNotificationAsync({
-                content,
-                trigger: {
-                  date: firstNotificationTime,
-                  repeats: true,
-                },
-              });
-            const timeDesc =
-              firstNotificationTime > todayAtTime ? '내일부터' : '오늘부터';
-            console.log(
-              `알림 스케줄링 완료: ${alarm.ampm} ${pad2(
-                alarm.hour
-              )}:${pad2(
-                alarm.minute
-              )} (${timeDesc} 시작, 첫 알림: ${firstNotificationTime.toLocaleString()}, 매일 반복, ID: ${notificationId})`
-            );
-          } catch (e) {
-            console.warn(
-              `알림 스케줄링 실패: ${alarm.ampm} ${pad2(
-                alarm.hour
-              )}:${pad2(alarm.minute)}`,
-              e
-            );
-          }
-        } else if (alarm.selectedYMD) {
-          // 특정 날짜 한 번
-          const when = new Date(
-            alarm.selectedYMD.year,
-            alarm.selectedYMD.month,
-            alarm.selectedYMD.day,
-            hour24,
-            alarm.minute,
-            0,
-            0
-          );
-          const now = new Date();
-          if (when > now) {
-            await Notifications.scheduleNotificationAsync({
-              content,
-              trigger: { date: when },
-            });
-          }
-        }
       }
     } catch (e) {
       console.warn('알림 예약 오류:', e);
@@ -340,37 +126,27 @@ export default function App() {
   };
 
   useEffect(() => {
-    // 웹에서는 알림 기능 건너뛰기
-    if (Platform.OS === 'web' || !Notifications) {
-      return;
-    }
-
     // 1) 권한 요청 및 안드로이드 채널 설정
     (async () => {
-      try {
-        const { status } = await Notifications.getPermissionsAsync();
-        if (status !== 'granted') {
-          await Notifications.requestPermissionsAsync();
-        }
+      const { status } = await Notifications.getPermissionsAsync();
+      if (status !== 'granted') {
+        await Notifications.requestPermissionsAsync();
+      }
 
-        if (Platform.OS === 'android') {
-          await Notifications.setNotificationChannelAsync('default', {
-            name: 'Default',
-            importance: Notifications.AndroidImportance.MAX,
-            sound: true,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#FF231F7C',
-          });
-        }
-      } catch (e) {
-        console.warn('알림 권한 설정 실패:', e);
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'Default',
+          importance: Notifications.AndroidImportance.MAX,
+          sound: true,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+        });
       }
     })();
 
-    // 2) 알림 수신 리스너(앱 열려 있을 때) - 웹에서는 건너뛰기
-    if (Platform.OS !== 'web' && Notifications) {
-      notificationListener.current =
-        Notifications.addNotificationReceivedListener((notification) => {
+    // 2) 알림 수신 리스너(앱 열려 있을 때)
+    notificationListener.current =
+      Notifications.addNotificationReceivedListener((notification) => {
         const notificationData = notification.request.content;
         const alarmId = notificationData.data?.alarmId || '알 수 없음';
         const notificationTime = new Date(notification.date);
@@ -418,13 +194,12 @@ export default function App() {
         console.log('========================================');
       });
 
-      // 3) 알림 클릭 리스너
-      responseListener.current =
-        Notifications.addNotificationResponseReceivedListener((response) => {
-          console.log('알림 눌렀다!', response);
-          // 필요하면 여기서 특정 화면으로 네비게이션
-        });
-    }
+    // 3) 알림 클릭 리스너
+    responseListener.current =
+      Notifications.addNotificationResponseReceivedListener((response) => {
+        console.log('알림 눌렀다!', response);
+        // 필요하면 여기서 특정 화면으로 네비게이션
+      });
 
     return () => {
       if (notificationListener.current) {
@@ -446,17 +221,6 @@ export default function App() {
 
   // 🔄 아직 auth 상태 로딩 중이면 아무것도 렌더링 안 함
   if (authLoading) return null;
-
-  // 웹에서 앱처럼 보이도록 스타일 적용
-  if (Platform.OS === 'web') {
-    if (typeof document !== 'undefined') {
-      document.documentElement.style.height = '100%';
-      document.body.style.height = '100%';
-      document.body.style.margin = '0';
-      document.body.style.padding = '0';
-      document.body.style.overflow = 'hidden';
-    }
-  }
 
   return (
     <AppProvider>
@@ -492,6 +256,11 @@ export default function App() {
               name="Report"
               component={ReportScreen}
               options={{ title: '리포트' }}
+            />
+            <Stack.Screen
+            name='CumulativeReport'
+            component={CumulativeReportScreen}
+            options={{ title: '누적 리포트'}}
             />
           </Stack.Navigator>
         ) : (
