@@ -121,12 +121,12 @@ const ReportScreen = ({ navigation }) => {
 
           return top3.map((habit, idx) => (
             <View key={idx} style={styles.habitRow}>
-              <Text style={styles.habitIcon}>✅</Text>
+               <Feather name="check-circle" size={20} color="#4CAF50" />
               <View>
                 <Text style={styles.habitTitle}>{habit.mission}</Text>
                 <Text style={[styles.habitSubtitle, {textAlign: 'center'}]}>꾸준히 실천 중!</Text>
               </View>
-              <Text style={styles.habitCount}>{habit.count}회</Text>
+               <Text style={styles.habitCount}>{habit.count} 회</Text>
             </View>
           ));
         })()
@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
   habitIcon: { fontSize: 24 },
   habitTitle: { fontSize: 14, fontWeight: "600" },
   habitSubtitle: { fontSize: 10, color: "#555" },
-  habitCount: { fontSize: 14, fontWeight: "700", color: "#4CAF50" },
+  habitCount: { fontSize: 16, fontWeight: "800", color: "#4CAF50" },
   modalBackground: {
     flex: 1,
     backgroundColor: "#00000099",

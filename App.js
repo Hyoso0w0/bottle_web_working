@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Platform } from 'react-native';
+import CumulativeReportScreen from './CumulativeReportScreen';
 
 // 웹에서는 알림 모듈을 조건부로 import
 let Notifications = null;
@@ -104,240 +105,7 @@ export default function App() {
   const onLogout = () => signOut(auth);
 
   // 알림 스케줄링 헬퍼 함수 (필요하면 NotificationsScreen 등에서 import해서 써도 됨)
-  // 웹 알림 유틸
-  const requestWebNotificationPermission = async () => {
-    if (Platform.OS !== 'web' || !('Notification' in window)) {
-      return false;
-    }
-    
-    if (Notification.permission === 'granted') {
-      return true;
-    }
-    
-    if (Notification.permission !== 'denied') {
-      const permission = await Notification.requestPermission();
-      return permission === 'granted';
-    }
-    
-    return false;
-  };
 
-  const showWebNotification = (title, body, data = {}) => {
-    if (Platform.OS !== 'web' || !('Notification' in window)) {
-      return;
-    }
-    
-    if (Notification.permission === 'granted') {
-      const notification = new Notification(title, {
-        body,
-        icon: '/favicon.png',
-        badge: '/favicon.png',
-        tag: data.alarmId || 'default',
-        requireInteraction: false,
-      });
-      
-      notification.onclick = () => {
-        window.focus();
-        notification.close();
-      };
-      
-      setTimeout(() => {
-        notification.close();
-      }, 5000);
-    }
-  };
-
-  const scheduleWebNotification = (alarm, triggerDate) => {
-    if (Platform.OS !== 'web') return null;
-    
-    const now = new Date();
-    const delay = triggerDate.getTime() - now.getTime();
-    
-    if (delay <= 0) return null;
-    
-    return setTimeout(() => {
-      showWebNotification(
-        '마이에코 🌱',
-        alarm.message || '알림 시간이에요!',
-        { alarmId: alarm.id }
-      );
-    }, delay);
-  };
-
-  const scheduleAlarms = async (alarmsList) => {
-    // 웹에서는 브라우저 Notification API 사용
-    if (Platform.OS === 'web') {
-      await requestWebNotificationPermission();
-      
-      // 기존 웹 알림 클리어 (전역 변수에 저장 필요)
-      if (typeof window !== 'undefined' && window.webNotificationTimeouts) {
-        window.webNotificationTimeouts.forEach(timeout => clearTimeout(timeout));
-        window.webNotificationTimeouts = [];
-      } else if (typeof window !== 'undefined') {
-        window.webNotificationTimeouts = [];
-      }
-      
-      const pad2 = (n) => String(n).padStart(2, '0');
-      const as24h = (h12, meridiem) => {
-        if (meridiem === 'AM') return h12 % 12;
-        return (h12 % 12) + 12;
-      };
-
-      for (const alarm of alarmsList) {
-        if (!alarm.enabled) continue;
-        if (!alarm.hour || alarm.minute === undefined || !alarm.ampm) continue;
-
-        const hour24 = as24h(alarm.hour, alarm.ampm);
-
-        if (alarm.repeatDaily) {
-          // 매일 반복 - 다음 알림 시간 계산
-          const now = new Date();
-          const todayAtTime = new Date(
-            now.getFullYear(),
-            now.getMonth(),
-            now.getDate(),
-            hour24,
-            alarm.minute,
-            0,
-            0
-          );
-
-          let firstNotificationTime = todayAtTime;
-          if (todayAtTime <= now) {
-            firstNotificationTime = new Date(
-              todayAtTime.getTime() + 24 * 60 * 60 * 1000
-            );
-          }
-
-          const timeoutId = scheduleWebNotification(alarm, firstNotificationTime);
-          if (timeoutId && typeof window !== 'undefined') {
-            window.webNotificationTimeouts.push(timeoutId);
-          }
-        } else if (alarm.selectedYMD) {
-          // 특정 날짜 한 번
-          const when = new Date(
-            alarm.selectedYMD.year,
-            alarm.selectedYMD.month,
-            alarm.selectedYMD.day,
-            hour24,
-            alarm.minute,
-            0,
-            0
-          );
-          const now = new Date();
-          if (when > now) {
-            const timeoutId = scheduleWebNotification(alarm, when);
-            if (timeoutId && typeof window !== 'undefined') {
-              window.webNotificationTimeouts.push(timeoutId);
-            }
-          }
-        }
-      }
-      
-      console.log('웹 알림 스케줄링 완료:', window.webNotificationTimeouts?.length || 0);
-      return;
-    }
-
-    try {
-      await Notifications.cancelAllScheduledNotificationsAsync();
-
-      const pad2 = (n) => String(n).padStart(2, '0');
-      const as24h = (h12, meridiem) => {
-        if (meridiem === 'AM') return h12 % 12;
-        return (h12 % 12) + 12;
-      };
-
-      for (const alarm of alarmsList) {
-        // 저장된 시간 데이터 확인 (hour, minute, ampm)
-        if (!alarm.hour || alarm.minute === undefined || !alarm.ampm) {
-          console.warn(
-            `알림 시간 데이터 누락: ID ${alarm.id}, hour: ${alarm.hour}, minute: ${alarm.minute}, ampm: ${alarm.ampm}`
-          );
-          continue;
-        }
-
-        const hour24 = as24h(alarm.hour, alarm.ampm);
-        const content = {
-          title: '마이에코 🌱',
-          body:
-            alarm.message ||
-            `${alarm.ampm} ${pad2(alarm.hour)}:${pad2(
-              alarm.minute
-            )} 알림이에요.`,
-          data: { screen: 'Home', alarmId: alarm.id },
-        };
-
-        if (alarm.repeatDaily) {
-          // 매일 반복
-          const now = new Date();
-          const todayAtTime = new Date(
-            now.getFullYear(),
-            now.getMonth(),
-            now.getDate(),
-            hour24,
-            alarm.minute,
-            0,
-            0
-          );
-
-          let firstNotificationTime = todayAtTime;
-          if (todayAtTime <= now) {
-            // 오늘 시간이 지났으면 내일
-            firstNotificationTime = new Date(
-              todayAtTime.getTime() + 24 * 60 * 60 * 1000
-            );
-          }
-
-          try {
-            const notificationId =
-              await Notifications.scheduleNotificationAsync({
-                content,
-                trigger: {
-                  date: firstNotificationTime,
-                  repeats: true,
-                },
-              });
-            const timeDesc =
-              firstNotificationTime > todayAtTime ? '내일부터' : '오늘부터';
-            console.log(
-              `알림 스케줄링 완료: ${alarm.ampm} ${pad2(
-                alarm.hour
-              )}:${pad2(
-                alarm.minute
-              )} (${timeDesc} 시작, 첫 알림: ${firstNotificationTime.toLocaleString()}, 매일 반복, ID: ${notificationId})`
-            );
-          } catch (e) {
-            console.warn(
-              `알림 스케줄링 실패: ${alarm.ampm} ${pad2(
-                alarm.hour
-              )}:${pad2(alarm.minute)}`,
-              e
-            );
-          }
-        } else if (alarm.selectedYMD) {
-          // 특정 날짜 한 번
-          const when = new Date(
-            alarm.selectedYMD.year,
-            alarm.selectedYMD.month,
-            alarm.selectedYMD.day,
-            hour24,
-            alarm.minute,
-            0,
-            0
-          );
-          const now = new Date();
-          if (when > now) {
-            await Notifications.scheduleNotificationAsync({
-              content,
-              trigger: { date: when },
-            });
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('알림 예약 오류:', e);
-    }
-  };
 
   useEffect(() => {
     // 웹에서는 알림 기능 건너뛰기
@@ -492,6 +260,11 @@ export default function App() {
               name="Report"
               component={ReportScreen}
               options={{ title: '리포트' }}
+            />
+            <Stack.Screen
+            name='CumulativeReport'
+            component={CumulativeReportScreen}
+            options={{ title: '누적 리포트'}}
             />
           </Stack.Navigator>
         ) : (
