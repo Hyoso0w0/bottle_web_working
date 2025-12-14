@@ -78,7 +78,8 @@ git clone https://github.com/Hyoso0w0/bottle_web_working.git
 cd bottle_web_working
 ```
 3. 환경변수 설정
-```.env.local 파일 생성 후 firebase에 api키 받아서 설정
+( .env.local 파일 생성 후 firebase에 api키 받아서 설정 )
+```
 API_KEY=YOUR_FIREBASE_API_KEY
 AUTH_DOMAIN=YOUR_PROJECT_ID.firebaseapp.com
 PROJECT_ID=YOUR_PROJECT_ID
