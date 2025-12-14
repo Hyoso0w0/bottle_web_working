@@ -16,6 +16,7 @@
 
 
 **주요 기능**
+
 <img src="assets/myeco_screen.png" alt="my screen" width="500" />
 
 **1. 알림 기능:** 깜빡하기 쉬운 텀블러, 장바구니 챙기기 등의 제로웨이스트 습관을 설정한 알림이 울리며 리마인드 시킬 수 있습니다.
@@ -79,7 +80,9 @@ git clone https://github.com/Hyoso0w0/bottle_web_working.git
 cd bottle_web_working
 ```
 3. 환경변수 설정
+
 ( .env.local 파일 생성 후 firebase에 api키 받아서 설정 )
+
 ```
 API_KEY=YOUR_FIREBASE_API_KEY
 AUTH_DOMAIN=YOUR_PROJECT_ID.firebaseapp.com
