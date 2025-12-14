@@ -4,6 +4,9 @@ import React, { useMemo, useState, useContext, useEffect, useCallback } from 're
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import TreeForest from './TreeForest';
 import { AppContext } from "./AppContext";
+import { Image as RNImage } from "react-native";
+const kakaoLogo = require("./assets/kakao_impact_logo_color.png");
+const tfLogo = require("./assets/TF!_Logo_W1.png");
 
 // 웹에서는 알림 모듈을 조건부로 import
 let Notifications = null;
@@ -1103,6 +1106,16 @@ useEffect(() => {
           )}
         </View>
         <StatusBar style="auto" />
+           {/* 서비스 보증 문구 (footer) */}
+        <View style={styles.attributionBox}>
+          <View style={styles.attributionLogos}>
+            <RNImage source={tfLogo} style={styles.attributionLogo} resizeMode="contain" />
+            <RNImage source={kakaoLogo} style={styles.attributionLogo} resizeMode="contain" />
+          </View>
+          <Text style={styles.attributionText}>
+            카카오임팩트 재단의 지원과 테크포임팩트 캠퍼스의 기여로 개발되었습니다.
+          </Text>
+          </View>
 
         {/* 추천 미션 선물 모달 */}
         
@@ -1501,8 +1514,31 @@ missionTags: {
 alarmCard: {
   borderWidth: 2,
   borderColor: '#FDD835',
-}
-
+},
+ attributionBox: {
+    marginTop: 14,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+    alignItems: "center",
+  },
+  attributionText: {
+    fontSize: 11,      // 가이드: 10~12px
+    color: "#6b7280",  // 각주 느낌
+    textAlign: "center",
+    lineHeight: 16,
+  },
+   attributionLogos: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginBottom: 6,
+  },
+  attributionLogo: {
+    width: 100,     // 가이드: 최소 가로 100px
+    height: 22,
+  },
 });
 
 export default HomeScreen;
