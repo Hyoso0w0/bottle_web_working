@@ -80,12 +80,14 @@ cd bottle_web_working
 
 3. 디펜던시 다운로드하기
 ```bash
-npm install --global expo-cli
+npm install
 ```
 
 4. Expo-go 실행
 ```bash
 npx expo start
+# 또는
+npm run dev
 ```
 
 5. 휴대전화 기기에 Expo-go 앱 다운로드
