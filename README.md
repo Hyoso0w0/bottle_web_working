@@ -71,18 +71,20 @@
 **2. 로그인 화면에서 이메일과 비밀번호 설정 후 서비스 시작**
 
 **Run on Local Environment 로컬 환경에서 실행**
-**알림 기능은 데스크탑 웹에서 확인 가능(모바일 웹에선 불가)**
+웹 페이지의 알림 기능은 데스크탑 웹에서 확인 가능(모바일 웹에선 불가)
+
+**로컬 설치 방법**
 
 1. 리포지토리 클론하기
 ```bash
 git clone https://github.com/Hyoso0w0/bottle_web_working.git
 ```
 
-2. 폴더로 이동
+1. 폴더로 이동
 ```bash
 cd bottle_web_working
 ```
-3. 환경변수 설정
+1. 환경변수 설정
 
 ( .env.local 파일 생성 후 firebase에 api키 받아서 설정 )
 
